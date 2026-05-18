@@ -1,0 +1,23 @@
+import { Router } from 'express';
+import { requireAuth } from '../../middleware/auth.js';
+import { validate } from '../../middleware/validate.js';
+import { groupController } from './group.controller.js';
+import {
+  createGroupSchema,
+  joinByCodeSchema,
+  updateGroupSchema,
+} from './group.validation.js';
+
+const router = Router();
+router.use(requireAuth);
+
+router.post('/', validate(createGroupSchema), groupController.create);
+router.get('/', groupController.list);
+router.post('/join', validate(joinByCodeSchema), groupController.joinByCode);
+router.get('/:id', groupController.getById);
+router.patch('/:id', validate(updateGroupSchema), groupController.update);
+router.post('/:id/members', groupController.addMember);
+router.post('/:id/leave', groupController.leave);
+router.get('/:id/balances', groupController.balances);
+
+export default router;

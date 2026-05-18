@@ -1,0 +1,12 @@
+{
+  "name": "Expense",
+  "short_name": "Expense",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0B0B12",
+  "theme_color": "#0B0B12",
+  "description": "Premium expense sharing & personal finance",
+  "orientation": "portrait-primary",
+  "prefer_related_applications": false,
+  "icons": []
+}

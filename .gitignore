@@ -1,0 +1,43 @@
+# ── Node / backend ───────────────────────────────────────────
+backend/node_modules/
+backend/uploads/
+backend/*.log
+
+# ── Flutter / app ────────────────────────────────────────────
+app/.dart_tool/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/.packages
+app/build/
+app/.idea/
+app/.vscode/
+app/expense_app.iml
+app/android/.gradle/
+app/android/local.properties
+app/android/key.properties
+app/android/app/key.jks
+app/ios/Pods/
+app/ios/.symlinks/
+app/ios/Flutter/Flutter.framework
+app/ios/Flutter/Flutter.podspec
+app/windows/flutter/ephemeral/
+app/macos/Flutter/ephemeral/
+app/linux/flutter/ephemeral/
+app/web/flutter_service_worker.js
+app/*.lock
+
+# ── Python (tests + manual generator) ────────────────────────
+__pycache__/
+*.pyc
+.venv/
+
+# ── Repo-root run logs (background processes) ────────────────
+flutter-run.log
+flutter-run.err.log
+backend-run.log
+backend-run.err.log
+
+# ── OS / IDE ────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
