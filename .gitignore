@@ -41,3 +41,4 @@ backend-run.err.log
 .DS_Store
 Thumbs.db
 *.swp
+~$*
