@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/app_colors.dart';
+import '../../../core/errors/error_messages.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../shared/widgets/avatar.dart';
 import '../../../shared/widgets/shimmer_loader.dart';
@@ -26,7 +27,12 @@ class FriendDetailScreen extends ConsumerWidget {
     final user = ref.watch(authProvider).user;
     final currency = user?.currency ?? 'USD';
 
-    final net = friend.net;
+    // Watch live summary so balance updates immediately after settlement
+    final summaryAsync = ref.watch(friendsSummaryProvider);
+    final net = summaryAsync.valueOrNull
+            ?.firstWhere((f) => f.userId == friendId, orElse: () => friend)
+            .net ??
+        friend.net;
     final isOwed = net > 0;
     final isSettled = net.abs() < 0.005;
 
@@ -175,9 +181,9 @@ class FriendDetailScreen extends ConsumerWidget {
     );
   }
 
-  void _showSettleUp(BuildContext context, WidgetRef ref,
-      {required String currency, required double net}) {
-    showModalBottomSheet(
+  Future<void> _showSettleUp(BuildContext context, WidgetRef ref,
+      {required String currency, required double net}) async {
+    final settled = await showModalBottomSheet<double>(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
@@ -187,6 +193,66 @@ class FriendDetailScreen extends ConsumerWidget {
         net: net,
         currency: currency,
         ref: ref,
+      ),
+    );
+    if (settled != null && context.mounted) {
+      _showSettlementSuccess(context, settled, currency, friend.user.name);
+    }
+  }
+
+  static void _showSettlementSuccess(
+      BuildContext context, double amount, String currency, String name) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (modalCtx) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 32, 24, 40),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                gradient: AppColors.brandGradient,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.check_rounded,
+                  color: Colors.white, size: 40),
+            ),
+            const SizedBox(height: 20),
+            const Text('Settlement Recorded!',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 8),
+            Text(
+              'You settled ${Money.format(amount, code: currency)} with $name',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  fontSize: 15,
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withOpacity(0.65)),
+            ),
+            const SizedBox(height: 28),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () => Navigator.pop(modalCtx),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  minimumSize: const Size(0, 50),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+                child: const Text('Done',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 16)),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -335,6 +401,7 @@ class _SettleUpSheet extends StatefulWidget {
 class _SettleUpSheetState extends State<_SettleUpSheet> {
   String? _selectedGroupId;
   bool _loading = false;
+  late TextEditingController _amountCtrl;
 
   @override
   void initState() {
@@ -342,6 +409,14 @@ class _SettleUpSheetState extends State<_SettleUpSheet> {
     if (widget.friend.groups.isNotEmpty) {
       _selectedGroupId = widget.friend.groups.first.groupId;
     }
+    _amountCtrl = TextEditingController(
+        text: widget.net.abs().toStringAsFixed(2));
+  }
+
+  @override
+  void dispose() {
+    _amountCtrl.dispose();
+    super.dispose();
   }
 
   @override
@@ -379,6 +454,20 @@ class _SettleUpSheetState extends State<_SettleUpSheet> {
             style: TextStyle(
                 color: isOwed ? AppColors.primary : Colors.orange,
                 fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 16),
+          // Editable amount
+          TextFormField(
+            controller: _amountCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(
+              labelText: 'Amount',
+              prefixText: '${widget.currency} ',
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10)),
+              contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12, vertical: 14),
+            ),
           ),
           const SizedBox(height: 16),
           if (groups.length > 1) ...[
@@ -431,7 +520,20 @@ class _SettleUpSheetState extends State<_SettleUpSheet> {
   }
 
   Future<void> _settle() async {
-    if (_selectedGroupId == null) return;
+    if (_selectedGroupId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No shared group — add this friend to a group first'),
+        ),
+      );
+      return;
+    }
+    final enteredAmount = double.tryParse(_amountCtrl.text.trim());
+    if (enteredAmount == null || enteredAmount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Enter a valid amount')));
+      return;
+    }
     setState(() => _loading = true);
     try {
       final net = widget.net;
@@ -446,17 +548,14 @@ class _SettleUpSheetState extends State<_SettleUpSheet> {
         groupId: _selectedGroupId!,
         from: from,
         to: to,
-        amount: net.abs(),
+        amount: enteredAmount,
         currency: widget.currency,
       );
       widget.ref.invalidate(friendsSummaryProvider);
       widget.ref.invalidate(friendDetailProvider(widget.friend.userId));
-      if (mounted) Navigator.pop(context);
+      if (mounted) Navigator.pop(context, enteredAmount);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
-      }
+      if (mounted) showErrorSnack(context, e, fallback: 'Could not record settlement');
     } finally {
       if (mounted) setState(() => _loading = false);
     }

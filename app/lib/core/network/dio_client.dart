@@ -10,8 +10,8 @@ class DioClient {
     _dio = Dio(
       BaseOptions(
         baseUrl: ApiConstants.apiV1,
-        connectTimeout: const Duration(seconds: 15),
-        receiveTimeout: const Duration(seconds: 20),
+        connectTimeout: const Duration(seconds: 6),
+        receiveTimeout: const Duration(seconds: 10),
         contentType: 'application/json',
         responseType: ResponseType.json,
         validateStatus: (s) => s != null && s < 500,
@@ -74,6 +74,7 @@ class _AuthInterceptor extends Interceptor {
 
   final Dio _dio;
   bool _refreshing = false;
+  Future<bool>? _pendingRefresh;
 
   @override
   Future<void> onRequest(RequestOptions options, RequestInterceptorHandler handler) async {
@@ -106,9 +107,22 @@ class _AuthInterceptor extends Interceptor {
     handler.next(response);
   }
 
+  // If a refresh is already in flight, wait for it instead of making a
+  // second request.  This prevents the race where two concurrent 401s both
+  // try to refresh simultaneously and one incorrectly returns false.
   Future<bool> _attemptRefresh() async {
-    if (_refreshing) return false;
+    if (_refreshing) return await (_pendingRefresh ?? Future.value(false));
     _refreshing = true;
+    _pendingRefresh = _doRefresh();
+    try {
+      return await _pendingRefresh!;
+    } finally {
+      _refreshing = false;
+      _pendingRefresh = null;
+    }
+  }
+
+  Future<bool> _doRefresh() async {
     try {
       final refresh = await TokenStorage.instance.readRefresh();
       if (refresh == null) return false;
@@ -127,8 +141,6 @@ class _AuthInterceptor extends Interceptor {
       }
     } catch (_) {
       // fall through
-    } finally {
-      _refreshing = false;
     }
     return false;
   }

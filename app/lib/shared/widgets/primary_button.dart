@@ -24,16 +24,16 @@ class PrimaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final disabled = onPressed == null || loading;
+    final isDisabled = onPressed == null && !loading;
     final body = AnimatedContainer(
       duration: const Duration(milliseconds: 180),
       curve: Curves.easeOut,
       height: height,
       decoration: BoxDecoration(
-        gradient: disabled ? null : gradient,
-        color: disabled ? Theme.of(context).colorScheme.surface : null,
+        gradient: isDisabled ? null : gradient,
+        color: isDisabled ? Theme.of(context).colorScheme.surface : null,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: disabled
+        boxShadow: isDisabled
             ? null
             : [
                 BoxShadow(
@@ -71,7 +71,7 @@ class PrimaryButton extends StatelessWidget {
     );
 
     final tappable = InkWell(
-      onTap: disabled ? null : onPressed,
+      onTap: (isDisabled || loading) ? null : onPressed,
       borderRadius: BorderRadius.circular(16),
       child: body,
     );

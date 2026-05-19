@@ -13,6 +13,7 @@ class HomeShell extends ConsumerWidget {
     ('/home', Icons.dashboard_rounded, 'Home'),
     ('/groups', Icons.groups_rounded, 'Groups'),
     ('/friends', Icons.people_alt_rounded, 'Friends'),
+    ('/tracker', Icons.track_changes_rounded, 'Tracker'),
     ('/activity', Icons.notifications_rounded, 'Activity'),
     ('/profile', Icons.person_rounded, 'Profile'),
   ];

@@ -132,7 +132,19 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
         ref.invalidate(groupBalancesProvider(widget.groupId!));
         ref.invalidate(expenseFeedProvider);
       }
-      if (mounted) context.pop();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Row(children: [
+            const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+            const SizedBox(width: 10),
+            Text(widget.isEdit ? 'Expense updated!' : 'Expense added!'),
+          ]),
+          backgroundColor: Colors.green.shade600,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ));
+        context.pop();
+      }
     } catch (e) {
       if (mounted) showErrorSnack(context, e, fallback: 'Could not save expense');
     } finally {

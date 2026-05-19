@@ -5,6 +5,7 @@ import groupRoutes from '../modules/groups/group.routes.js';
 import expenseRoutes from '../modules/expenses/expense.routes.js';
 import settlementRoutes from '../modules/settlements/settlement.routes.js';
 import activityRoutes from '../modules/activity/activity.routes.js';
+import personalRoutes from '../modules/personal/personal.routes.js';
 
 export const router = Router();
 
@@ -23,3 +24,4 @@ router.use('/groups', groupRoutes);
 router.use('/expenses', expenseRoutes);
 router.use('/settlements', settlementRoutes);
 router.use('/activity', activityRoutes);
+router.use('/personal-expenses', personalRoutes);

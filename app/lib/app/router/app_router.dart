@@ -25,6 +25,7 @@ import '../../features/profile/presentation/profile_screen.dart';
 import '../../features/groups/presentation/friends_summary_screen.dart';
 import '../../features/groups/presentation/friend_detail_screen.dart';
 import '../../features/groups/data/friend_summary_model.dart';
+import '../../features/personal/presentation/personal_tracker_screen.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final notifier = _AuthRefresh(ref);
@@ -67,6 +68,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/home', builder: (_, __) => const DashboardScreen()),
           GoRoute(path: '/groups', builder: (_, __) => const GroupsScreen()),
           GoRoute(path: '/friends', builder: (_, __) => const FriendsSummaryScreen()),
+          GoRoute(path: '/tracker', builder: (_, __) => const PersonalTrackerScreen()),
           GoRoute(path: '/activity', builder: (_, __) => const ActivityScreen()),
           GoRoute(path: '/profile', builder: (_, __) => const ProfileScreen()),
         ],

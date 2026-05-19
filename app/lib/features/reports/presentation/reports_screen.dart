@@ -10,9 +10,13 @@ import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/shimmer_loader.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../personal/data/personal_expense_model.dart';
+import '../../personal/providers/personal_providers.dart';
 import '../data/report_exporter.dart';
 import '../data/report_model.dart';
 import '../providers/report_providers.dart';
+
+enum _ReportSource { groups, personal, combined }
 
 enum ReportPeriod { day, week, month, year, custom }
 
@@ -25,6 +29,7 @@ class ReportsScreen extends ConsumerStatefulWidget {
 
 class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   ReportPeriod _period = ReportPeriod.month;
+  _ReportSource _source = _ReportSource.groups;
   DateTime _customFrom = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day)
       .subtract(const Duration(days: 30));
   DateTime _customTo =
@@ -72,7 +77,35 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     final user = ref.watch(authProvider).user;
     final currency = user?.currency ?? 'USD';
     final (from, to, label) = _cachedRange;
-    final async = ref.watch(reportProvider(ReportQuery(from: from, to: to)));
+    final groupAsync = ref.watch(reportProvider(ReportQuery(from: from, to: to)));
+    final personalAsync = (_source != _ReportSource.groups)
+        ? ref.watch(personalExpenseListProvider((from, to)))
+        : const AsyncValue<List<PersonalExpenseModel>>.data([]);
+
+    // Resolve the correct AsyncValue<ReportData> based on the selected source
+    final AsyncValue<ReportData> async;
+    switch (_source) {
+      case _ReportSource.groups:
+        async = groupAsync;
+      case _ReportSource.personal:
+        async = personalAsync.when(
+          data: (items) => AsyncValue.data(_buildPersonalData(items, from, to)),
+          loading: () => const AsyncValue.loading(),
+          error: (e, s) => AsyncValue.error(e, s),
+        );
+      case _ReportSource.combined:
+        if (groupAsync.isLoading || personalAsync.isLoading) {
+          async = const AsyncValue.loading();
+        } else if (groupAsync.hasError) {
+          async = AsyncValue.error(groupAsync.error!, groupAsync.stackTrace!);
+        } else if (personalAsync.hasError) {
+          async = AsyncValue.error(personalAsync.error!, personalAsync.stackTrace!);
+        } else {
+          async = AsyncValue.data(
+            _mergeData(groupAsync.value!, _buildPersonalData(personalAsync.value!, from, to)),
+          );
+        }
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -83,10 +116,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           onRefresh: () async {
             setState(() => _cachedRange = _computeRange());
             ref.invalidate(reportProvider(ReportQuery(from: from, to: to)));
+            ref.invalidate(personalExpenseListProvider((from, to)));
           },
           child: ListView(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
             children: [
+              _sourceChips(),
+              const SizedBox(height: 10),
               _periodChips(),
               const SizedBox(height: 16),
               async.when(
@@ -109,6 +145,35 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _sourceChips() {
+    const sources = [
+      (_ReportSource.groups, 'Groups'),
+      (_ReportSource.personal, 'Personal'),
+      (_ReportSource.combined, 'Combined'),
+    ];
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final s in sources) ...
+            [
+              ChoiceChip(
+                label: Text(s.$2),
+                selected: _source == s.$1,
+                selectedColor: AppColors.primary,
+                labelStyle: TextStyle(
+                  color: _source == s.$1 ? Colors.white : null,
+                  fontWeight: FontWeight.w600,
+                ),
+                onSelected: (_) => setState(() => _source = s.$1),
+              ),
+              const SizedBox(width: 8),
+            ],
+        ],
       ),
     );
   }
@@ -378,6 +443,82 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
   Widget _sectionTitle(String text) =>
       Text(text, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700));
+
+  // ── Personal data helpers ─────────────────────────────────────────────────
+
+  ReportData _buildPersonalData(
+      List<PersonalExpenseModel> items, DateTime from, DateTime to) {
+    final total = items.fold<double>(0, (a, e) => a + e.amount);
+    final count = items.length;
+
+    final catMap = <String, double>{};
+    final catCount = <String, int>{};
+    for (final e in items) {
+      catMap[e.category] = (catMap[e.category] ?? 0) + e.amount;
+      catCount[e.category] = (catCount[e.category] ?? 0) + 1;
+    }
+    final byCategory = catMap.entries
+        .map((e) =>
+            CategoryAmount(category: e.key, amount: e.value, count: catCount[e.key]!))
+        .toList()
+      ..sort((a, b) => b.amount.compareTo(a.amount));
+
+    final dayMap = <String, double>{};
+    for (final e in items) {
+      final k = DateFormat('yyyy-MM-dd').format(e.date);
+      dayMap[k] = (dayMap[k] ?? 0) + e.amount;
+    }
+    final byDay = dayMap.entries
+        .map((e) => DayAmount(date: DateTime.parse(e.key), amount: e.value))
+        .toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+
+    return ReportData(
+      from: from,
+      to: to,
+      totals: ReportTotals(total: total, count: count, paid: total),
+      byCategory: byCategory,
+      byDay: byDay,
+      items: [],
+    );
+  }
+
+  ReportData _mergeData(ReportData groups, ReportData personal) {
+    final total = groups.totals.total + personal.totals.total;
+    final count = groups.totals.count + personal.totals.count;
+    final paid = groups.totals.paid + personal.totals.paid;
+
+    final catMap = <String, double>{};
+    final catCount = <String, int>{};
+    for (final c in [...groups.byCategory, ...personal.byCategory]) {
+      catMap[c.category] = (catMap[c.category] ?? 0) + c.amount;
+      catCount[c.category] = (catCount[c.category] ?? 0) + c.count;
+    }
+    final byCategory = catMap.entries
+        .map((e) =>
+            CategoryAmount(category: e.key, amount: e.value, count: catCount[e.key]!))
+        .toList()
+      ..sort((a, b) => b.amount.compareTo(a.amount));
+
+    final dayMap = <String, double>{};
+    for (final d in [...groups.byDay, ...personal.byDay]) {
+      final k = DateFormat('yyyy-MM-dd').format(d.date);
+      dayMap[k] = (dayMap[k] ?? 0) + d.amount;
+    }
+    final byDay = dayMap.entries
+        .map((e) => DayAmount(date: DateTime.parse(e.key), amount: e.value))
+        .toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+
+    return ReportData(
+      from: groups.from,
+      to: groups.to,
+      totals: ReportTotals(total: total, count: count, paid: paid),
+      byCategory: byCategory,
+      byDay: byDay,
+      items: [...groups.items],
+    );
+  }
 
 }
 

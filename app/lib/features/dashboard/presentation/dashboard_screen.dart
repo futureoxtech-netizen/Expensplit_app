@@ -18,6 +18,8 @@ import '../../expenses/data/expense_model.dart';
 import '../../expenses/providers/expense_providers.dart';
 import '../../groups/data/friend_summary_model.dart';
 import '../../groups/providers/group_providers.dart';
+import '../../personal/data/personal_expense_model.dart';
+import '../../personal/providers/personal_providers.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -27,32 +29,36 @@ class DashboardScreen extends ConsumerWidget {
     final user = ref.watch(authProvider).user;
     final feedAsync = ref.watch(expenseFeedProvider);
     final groupsAsync = ref.watch(groupsListProvider);
-    final analyticsAsync = ref.watch(monthlyAnalyticsProvider);
+    final now = DateTime.now();
+    final personalAsync = ref.watch(personalExpenseListProvider(
+      (DateTime(now.year, now.month, 1),
+       DateTime(now.year, now.month + 1, 1)),
+    ));
+
+    final greeting = _greeting(now.hour);
 
     return GradientScaffold(
       padding: EdgeInsets.zero,
-      child: RefreshIndicator(
-        onRefresh: () async {
-          ref.invalidate(expenseFeedProvider);
-          ref.invalidate(groupsListProvider);
-          ref.invalidate(monthlyAnalyticsProvider);
-        },
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
-          children: [
-            Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── Pinned header (does not scroll) ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+            child: Row(
               children: [
-                Avatar(name: user?.name ?? 'You', imageUrl: user?.avatarUrl, size: 44),
+                Avatar(name: user?.name ?? 'You', imageUrl: user?.avatarUrl, size: 46),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Welcome back',
+                        greeting,
                         style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.45),
                           fontSize: 12,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                       Text(
@@ -68,9 +74,32 @@ class DashboardScreen extends ConsumerWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            _SummaryHeroCard(feedAsync: feedAsync, currency: user?.currency ?? 'USD', userId: user?.id ?? ''),
-            const SizedBox(height: 20),
+          ),
+          const SizedBox(height: 14),
+          // ── Pinned spending card ──
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: _SpendingCard(
+              feedAsync: feedAsync,
+              personalAsync: personalAsync,
+              currency: user?.currency ?? 'USD',
+              userId: user?.id ?? '',
+              now: now,
+            ),
+          ),
+          const SizedBox(height: 20),
+          // ── Scrollable body ──
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: () async {
+                ref.invalidate(expenseFeedProvider);
+                ref.invalidate(groupsListProvider);
+                ref.invalidate(monthlyAnalyticsProvider);
+                ref.invalidate(personalExpenseListProvider);
+              },
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
+                children: [
             Row(
               children: [
                 const Expanded(child: _SectionTitle('Your groups')),
@@ -144,7 +173,7 @@ class DashboardScreen extends ConsumerWidget {
                 }
                 return Column(
                   children: [
-                    for (final e in page.items.take(10))
+                    for (final e in page.items.take(5))
                       Padding(
                         padding: const EdgeInsets.only(bottom: 10),
                         child: _ExpenseTile(expense: e),
@@ -155,10 +184,19 @@ class DashboardScreen extends ConsumerWidget {
               loading: () => const ShimmerLoader(),
               error: (e, _) => _ErrorCard(message: friendlyError(e)),
             ),
-          ],
-        ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  static String _greeting(int hour) {
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
   }
 }
 
@@ -166,64 +204,155 @@ class _SectionTitle extends StatelessWidget {
   const _SectionTitle(this.text);
   final String text;
   @override
-  Widget build(BuildContext context) =>
-      Text(text, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700));
+  Widget build(BuildContext context) => Text(
+        text,
+        style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.3),
+      );
 }
 
-class _SummaryHeroCard extends StatelessWidget {
-  const _SummaryHeroCard({required this.feedAsync, required this.currency, required this.userId});
+class _SpendingCard extends StatelessWidget {
+  const _SpendingCard({
+    required this.feedAsync,
+    required this.personalAsync,
+    required this.currency,
+    required this.userId,
+    required this.now,
+  });
   final AsyncValue<ExpensePage> feedAsync;
+  final AsyncValue<List<PersonalExpenseModel>> personalAsync;
   final String currency;
   final String userId;
+  final DateTime now;
 
   @override
   Widget build(BuildContext context) {
-    final total = feedAsync.maybeWhen(
-      data: (p) => p.items.fold<double>(0, (acc, e) {
-        // Sum only the current user's share in each expense
-        final myShare = e.shares
-            .where((s) => s.user.id == userId)
-            .fold<double>(0, (a, s) => a + s.amount);
-        return acc + myShare;
+    final groupShare = feedAsync.maybeWhen(
+      data: (p) => p.items
+          .where((e) => e.spentAt.year == now.year && e.spentAt.month == now.month)
+          .fold<double>(0, (acc, e) {
+        return acc +
+            e.shares
+                .where((s) => s.user.id == userId)
+                .fold<double>(0, (a, s) => a + s.amount);
       }),
-      orElse: () => 0.0,
+      orElse: () => null,
     );
+    final personal = personalAsync.maybeWhen(
+      data: (items) => items.fold<double>(0, (a, e) => a + e.amount),
+      orElse: () => null,
+    );
+    final combined = (groupShare != null || personal != null)
+        ? (groupShare ?? 0) + (personal ?? 0)
+        : null;
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: () => GoRouter.of(context).push('/reports'),
         borderRadius: BorderRadius.circular(24),
         child: Container(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
           decoration: BoxDecoration(
             gradient: AppColors.brandGradient,
             borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
-                color: AppColors.primary.withOpacity(0.35),
-                blurRadius: 30,
-                offset: const Offset(0, 14),
+                color: AppColors.primary.withOpacity(0.3),
+                blurRadius: 24,
+                offset: const Offset(0, 10),
               ),
             ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('My expenses',
-                  style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 4),
-              Text(
-                Money.format(total, code: currency),
-                style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 12),
               Row(
-                children: const [
-                  _Pill(icon: Icons.bar_chart_rounded, label: 'See reports'),
-                  SizedBox(width: 8),
-                  _Pill(icon: Icons.bolt_rounded, label: 'Live sync'),
-                  Spacer(),
-                  Icon(Icons.arrow_forward_rounded, color: Colors.white),
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'This month',
+                        style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500),
+                      ),
+                      Text(
+                        '${DateFmt.monthShort(now.month)} ${now.year}',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.18),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        Icon(Icons.bar_chart_rounded,
+                            color: Colors.white, size: 13),
+                        SizedBox(width: 4),
+                        Text('Reports',
+                            style: TextStyle(
+                                color: Colors.white, fontSize: 11)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: _StatTile(
+                      icon: Icons.groups_rounded,
+                      label: 'Group share',
+                      value: groupShare == null
+                          ? '\u2014'
+                          : Money.format(groupShare, code: currency),
+                      loading: feedAsync.isLoading,
+                    ),
+                  ),
+                  Container(
+                      width: 1,
+                      height: 52,
+                      color: Colors.white.withOpacity(0.2)),
+                  Expanded(
+                    child: _StatTile(
+                      icon: Icons.person_rounded,
+                      label: 'Personal',
+                      value: personal == null
+                          ? '\u2014'
+                          : Money.format(personal, code: currency),
+                      loading: personalAsync.isLoading,
+                    ),
+                  ),
+                  Container(
+                      width: 1,
+                      height: 52,
+                      color: Colors.white.withOpacity(0.2)),
+                  Expanded(
+                    child: _StatTile(
+                      icon: Icons.account_balance_wallet_rounded,
+                      label: 'Total',
+                      value: combined == null
+                          ? '\u2014'
+                          : Money.format(combined, code: currency),
+                      loading: feedAsync.isLoading || personalAsync.isLoading,
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -234,6 +363,70 @@ class _SummaryHeroCard extends StatelessWidget {
   }
 }
 
+class _StatTile extends StatelessWidget {
+  const _StatTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.loading,
+  });
+  final IconData icon;
+  final String label;
+  final String value;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Icon(icon, size: 12, color: Colors.white),
+              ),
+              const SizedBox(width: 5),
+              Flexible(
+                child: Text(label,
+                    style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          loading
+              ? Container(
+                  height: 14,
+                  width: 50,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(4),
+                  ))
+              : FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(value,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800)),
+                ),
+        ],
+      ),
+    );
+  }
+}
+
+// legacy _Pill kept for reference but unused
 class _Pill extends StatelessWidget {
   const _Pill({required this.icon, required this.label});
   final IconData icon;
