@@ -10,5 +10,7 @@ router.get('/me', userController.getMe);
 router.patch('/me', userController.updateMe);
 router.get('/search', userController.search);
 router.post('/me/fcm-token', userController.registerFcmToken);
+router.get('/friends-summary', userController.friendsSummary);
+router.get('/friends/:friendId/transactions', userController.friendTransactions);
 
 export default router;

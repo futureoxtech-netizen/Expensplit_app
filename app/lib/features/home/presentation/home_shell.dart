@@ -12,6 +12,7 @@ class HomeShell extends ConsumerWidget {
   static const _tabs = [
     ('/home', Icons.dashboard_rounded, 'Home'),
     ('/groups', Icons.groups_rounded, 'Groups'),
+    ('/friends', Icons.people_alt_rounded, 'Friends'),
     ('/activity', Icons.notifications_rounded, 'Activity'),
     ('/profile', Icons.person_rounded, 'Profile'),
   ];

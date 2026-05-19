@@ -16,6 +16,7 @@ import '../../activity/providers/unread_provider.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../expenses/data/expense_model.dart';
 import '../../expenses/providers/expense_providers.dart';
+import '../../groups/data/friend_summary_model.dart';
 import '../../groups/providers/group_providers.dart';
 
 class DashboardScreen extends ConsumerWidget {
@@ -68,15 +69,7 @@ class DashboardScreen extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 16),
-            _SummaryHeroCard(feedAsync: feedAsync, currency: user?.currency ?? 'USD'),
-            const SizedBox(height: 20),
-            const _SectionTitle('This month'),
-            const SizedBox(height: 12),
-            analyticsAsync.when(
-              data: (rows) => _SpendChart(rows: rows),
-              loading: () => const SizedBox(height: 180, child: ShimmerLoader(height: 180, count: 1)),
-              error: (e, _) => _ErrorCard(message: friendlyError(e)),
-            ),
+            _SummaryHeroCard(feedAsync: feedAsync, currency: user?.currency ?? 'USD', userId: user?.id ?? ''),
             const SizedBox(height: 20),
             Row(
               children: [
@@ -130,7 +123,15 @@ class DashboardScreen extends ConsumerWidget {
               error: (e, _) => _ErrorCard(message: friendlyError(e)),
             ),
             const SizedBox(height: 20),
-            const _SectionTitle('Recent expenses'),
+            Row(
+              children: [
+                const Expanded(child: _SectionTitle('Recent expenses')),
+                TextButton(
+                  onPressed: () => context.push('/expenses/all'),
+                  child: const Text('See all'),
+                ),
+              ],
+            ),
             const SizedBox(height: 8),
             feedAsync.when(
               data: (page) {
@@ -170,14 +171,21 @@ class _SectionTitle extends StatelessWidget {
 }
 
 class _SummaryHeroCard extends StatelessWidget {
-  const _SummaryHeroCard({required this.feedAsync, required this.currency});
+  const _SummaryHeroCard({required this.feedAsync, required this.currency, required this.userId});
   final AsyncValue<ExpensePage> feedAsync;
   final String currency;
+  final String userId;
 
   @override
   Widget build(BuildContext context) {
     final total = feedAsync.maybeWhen(
-      data: (p) => p.items.fold<double>(0, (a, e) => a + e.amount),
+      data: (p) => p.items.fold<double>(0, (acc, e) {
+        // Sum only the current user's share in each expense
+        final myShare = e.shares
+            .where((s) => s.user.id == userId)
+            .fold<double>(0, (a, s) => a + s.amount);
+        return acc + myShare;
+      }),
       orElse: () => 0.0,
     );
     return Material(
@@ -201,7 +209,7 @@ class _SummaryHeroCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Total tracked',
+              const Text('My expenses',
                   style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600)),
               const SizedBox(height: 4),
               Text(
@@ -548,6 +556,119 @@ class _NotificationBell extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+// ─── Friends summary banner ───────────────────────────────────────────────────
+
+class _FriendsSummaryBanner extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(friendsSummaryProvider);
+    final user = ref.watch(authProvider).user;
+    final currency = user?.currency ?? 'USD';
+
+    return async.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (friends) {
+        if (friends.isEmpty) return const SizedBox.shrink();
+
+        // Friends who owe me vs. I owe them
+        final oweMe = friends.where((f) => f.net > 0).toList();
+        final IOwe = friends.where((f) => f.net < 0).toList();
+
+        return GlassCard(
+          padding: const EdgeInsets.all(0),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () => context.push('/friends'),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      gradient: AppColors.brandGradient,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.people_rounded,
+                        color: Colors.white, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Friends balance',
+                            style: TextStyle(
+                                fontWeight: FontWeight.w700, fontSize: 14)),
+                        const SizedBox(height: 2),
+                        _FriendPills(
+                            oweMe: oweMe, iOwe: IOwe, currency: currency),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right_rounded,
+                      color: AppColors.primary),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _FriendPills extends StatelessWidget {
+  const _FriendPills(
+      {required this.oweMe, required this.iOwe, required this.currency});
+  final List<FriendSummary> oweMe;
+  final List<FriendSummary> iOwe;
+  final String currency;
+
+  @override
+  Widget build(BuildContext context) {
+    final parts = <Widget>[];
+    if (oweMe.isNotEmpty) {
+      final total = oweMe.fold<double>(0, (a, f) => a + f.net);
+      parts.add(_Chip(
+        label: '+${Money.format(total, code: currency)}',
+        color: Colors.green.shade600,
+      ));
+    }
+    if (iOwe.isNotEmpty) {
+      final total = iOwe.fold<double>(0, (a, f) => a + f.net.abs());
+      parts.add(_Chip(
+        label: '-${Money.format(total, code: currency)}',
+        color: Colors.red.shade400,
+      ));
+    }
+    return Row(children: parts);
+  }
+}
+
+class _Chip extends StatelessWidget {
+  const _Chip({required this.label, required this.color});
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(right: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(label,
+          style: TextStyle(
+              color: color, fontSize: 12, fontWeight: FontWeight.w700)),
     );
   }
 }

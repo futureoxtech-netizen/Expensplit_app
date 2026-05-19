@@ -16,11 +16,15 @@ import '../../features/groups/presentation/edit_group_screen.dart';
 import '../../features/groups/presentation/join_group_screen.dart';
 import '../../features/expenses/presentation/add_expense_screen.dart';
 import '../../features/expenses/presentation/expense_detail_screen.dart';
+import '../../features/expenses/presentation/all_groups_feed_screen.dart';
 import '../../features/expenses/data/expense_model.dart';
 import '../../features/auth/data/user_model.dart';
 import '../../features/activity/presentation/activity_screen.dart';
 import '../../features/reports/presentation/reports_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
+import '../../features/groups/presentation/friends_summary_screen.dart';
+import '../../features/groups/presentation/friend_detail_screen.dart';
+import '../../features/groups/data/friend_summary_model.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final notifier = _AuthRefresh(ref);
@@ -62,6 +66,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(path: '/home', builder: (_, __) => const DashboardScreen()),
           GoRoute(path: '/groups', builder: (_, __) => const GroupsScreen()),
+          GoRoute(path: '/friends', builder: (_, __) => const FriendsSummaryScreen()),
           GoRoute(path: '/activity', builder: (_, __) => const ActivityScreen()),
           GoRoute(path: '/profile', builder: (_, __) => const ProfileScreen()),
         ],
@@ -69,6 +74,17 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
       GoRoute(path: '/groups/new', builder: (_, __) => const CreateGroupScreen()),
       GoRoute(path: '/groups/join', builder: (_, __) => const JoinGroupScreen()),
+      GoRoute(
+        path: '/friends/:id',
+        builder: (_, s) {
+          final f = s.extra as FriendSummary?;
+          return FriendDetailScreen(
+            friend: f!,
+            friendId: s.pathParameters['id']!,
+          );
+        },
+      ),
+      GoRoute(path: '/expenses/all', builder: (_, __) => const AllGroupsFeedScreen()),
       GoRoute(
         path: '/groups/:id',
         builder: (_, s) => GroupDetailScreen(groupId: s.pathParameters['id']!),
