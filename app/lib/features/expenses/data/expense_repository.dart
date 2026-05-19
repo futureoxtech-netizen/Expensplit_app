@@ -49,6 +49,33 @@ class ExpenseRepository {
     return ExpenseModel.fromJson(res['data'] as Map<String, dynamic>);
   }
 
+  Future<ExpenseModel> update(
+    String id, {
+    String? description,
+    double? amount,
+    String? splitMode,
+    String? paidBy,
+    List<Map<String, dynamic>>? splits,
+    String? category,
+    String? notes,
+    String? currency,
+    DateTime? spentAt,
+  }) async {
+    final body = <String, dynamic>{
+      if (description != null) 'description': description,
+      if (amount != null) 'amount': amount,
+      if (splitMode != null) 'splitMode': splitMode,
+      if (paidBy != null) 'paidBy': paidBy,
+      if (splits != null) 'splits': splits,
+      if (category != null) 'category': category,
+      if (notes != null) 'notes': notes,
+      if (currency != null) 'currency': currency,
+      if (spentAt != null) 'spentAt': spentAt.toIso8601String(),
+    };
+    final res = await _client.patch('/expenses/$id', body: body);
+    return ExpenseModel.fromJson(res['data'] as Map<String, dynamic>);
+  }
+
   Future<void> delete(String id) async {
     await _client.delete('/expenses/$id');
   }

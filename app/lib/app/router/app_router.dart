@@ -16,6 +16,8 @@ import '../../features/groups/presentation/edit_group_screen.dart';
 import '../../features/groups/presentation/join_group_screen.dart';
 import '../../features/expenses/presentation/add_expense_screen.dart';
 import '../../features/expenses/presentation/expense_detail_screen.dart';
+import '../../features/expenses/data/expense_model.dart';
+import '../../features/auth/data/user_model.dart';
 import '../../features/activity/presentation/activity_screen.dart';
 import '../../features/reports/presentation/reports_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
@@ -82,6 +84,24 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/expenses/:id',
         builder: (_, s) => ExpenseDetailScreen(expenseId: s.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '/expenses/:id/edit',
+        builder: (_, s) {
+          final expense = s.extra as ExpenseModel?;
+          return AddExpenseScreen(initialExpense: expense ?? ExpenseModel(
+            id: s.pathParameters['id']!,
+            groupId: '',
+            description: '',
+            amount: 0,
+            currency: 'USD',
+            category: 'other',
+            splitMode: 'equal',
+            paidBy: UserModel(id: '', name: '', email: ''),
+            shares: [],
+            spentAt: DateTime.now(),
+          ));
+        },
       ),
       GoRoute(path: '/reports', builder: (_, __) => const ReportsScreen()),
     ],

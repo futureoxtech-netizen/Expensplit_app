@@ -101,6 +101,17 @@ export const expenseService = {
     if (!expense || expense.deletedAt) throw NotFound('Expense not found');
     const group = await getGroupAsMember(expense.group, userId);
 
+    // Capture state before applying changes for the activity diff
+    const before = {
+      description: expense.description,
+      amount: expense.amount,
+      category: expense.category,
+      splitMode: expense.splitMode,
+      notes: expense.notes,
+      currency: expense.currency,
+      paidBy: expense.paidBy.toString(),
+    };
+
     if (patch.splits || patch.splitMode || patch.amount || patch.tax !== undefined || patch.tip !== undefined) {
       const mode = patch.splitMode || expense.splitMode;
       const amount = patch.amount ?? expense.amount;
@@ -120,12 +131,41 @@ export const expenseService = {
       if (patch[field] !== undefined) expense[field] = patch[field];
     }
     await expense.save();
+
+    // Build a human-readable diff of what changed
+    const after = {
+      description: expense.description,
+      amount: expense.amount,
+      category: expense.category,
+      splitMode: expense.splitMode,
+      notes: expense.notes,
+      currency: expense.currency,
+      paidBy: expense.paidBy.toString(),
+    };
+    const changes = [];
+    for (const field of Object.keys(before)) {
+      if (String(before[field]) !== String(after[field])) {
+        changes.push({ field, from: before[field], to: after[field] });
+      }
+    }
+    const changeSummary = changes
+      .map((c) => {
+        if (c.field === 'amount') {
+          return `amount ${expense.currency} ${Number(c.from).toFixed(2)} → ${Number(c.to).toFixed(2)}`;
+        }
+        return `${c.field}: ${c.from} → ${c.to}`;
+      })
+      .join(', ');
+    const message = changeSummary
+      ? `edited "${expense.description}" (${changeSummary})`
+      : `edited "${expense.description}"`;
+
     await activityService.log({
       groupId: group._id,
       actor: userId,
       type: 'expense.updated',
-      message: `updated "${expense.description}"`,
-      meta: { expenseId: expense._id.toString() },
+      message,
+      meta: { expenseId: expense._id.toString(), changes },
     });
     emitToGroup(group._id, 'expense:updated', { groupId: group._id.toString(), expenseId: expense._id.toString() });
     return expense.populate(['paidBy', 'shares.user']);
@@ -135,17 +175,15 @@ export const expenseService = {
     const expense = await Expense.findById(expenseId);
     if (!expense || expense.deletedAt) throw NotFound('Expense not found');
     const group = await getGroupAsMember(expense.group, userId);
-    if (expense.createdBy.toString() !== userId.toString() && group.roleOf(userId) !== 'owner') {
-      throw Forbidden('Only the creator or owner can delete this expense');
-    }
+    // Any group member can delete an expense
     expense.deletedAt = new Date();
     await expense.save();
     await activityService.log({
       groupId: group._id,
       actor: userId,
       type: 'expense.deleted',
-      message: `deleted "${expense.description}"`,
-      meta: { expenseId: expense._id.toString() },
+      message: `deleted "${expense.description}" (${expense.currency} ${expense.amount.toFixed(2)})`,
+      meta: { expenseId: expense._id.toString(), description: expense.description, amount: expense.amount, currency: expense.currency },
     });
     emitToGroup(group._id, 'expense:deleted', { groupId: group._id.toString(), expenseId: expense._id.toString() });
     return { ok: true };

@@ -14,7 +14,6 @@ export const env = {
   CORS_ORIGIN: process.env.CORS_ORIGIN ?? '*',
 
   MONGO_URI: required('MONGO_URI', 'mongodb://localhost:27017/expense'),
-  REDIS_URL: required('REDIS_URL', 'redis://localhost:6379'),
 
   JWT_ACCESS_SECRET: required('JWT_ACCESS_SECRET', 'dev-access-secret'),
   JWT_REFRESH_SECRET: required('JWT_REFRESH_SECRET', 'dev-refresh-secret'),

@@ -12,11 +12,17 @@ import '../../../shared/widgets/primary_button.dart';
 import '../../auth/data/user_model.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../groups/providers/group_providers.dart';
+import '../data/expense_model.dart';
 import '../providers/expense_providers.dart';
 
 class AddExpenseScreen extends ConsumerStatefulWidget {
-  const AddExpenseScreen({super.key, required this.groupId});
-  final String groupId;
+  const AddExpenseScreen({super.key, this.groupId, this.initialExpense})
+      : assert(groupId != null || initialExpense != null,
+            'Provide groupId for create or initialExpense for edit');
+  final String? groupId;
+  final ExpenseModel? initialExpense;
+
+  bool get isEdit => initialExpense != null;
 
   @override
   ConsumerState<AddExpenseScreen> createState() => _AddExpenseScreenState();
@@ -32,6 +38,26 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
   final Set<String> _participants = {};
   final Map<String, TextEditingController> _valueCtrls = {};
   bool _loading = false;
+  bool _prePopulated = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.initialExpense;
+    if (e != null) {
+      _description.text = e.description;
+      _amount.text = e.amount.toStringAsFixed(2);
+      _notes.text = e.notes;
+      _category = e.category;
+      _splitMode = e.splitMode;
+      _paidBy = e.paidBy.id;
+      for (final s in e.shares) {
+        _participants.add(s.user.id);
+        _ctrlFor(s.user.id).text = s.amount.toStringAsFixed(2);
+      }
+      _prePopulated = true;
+    }
+  }
 
   @override
   void dispose() {
@@ -46,6 +72,16 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
 
   TextEditingController _ctrlFor(String userId) =>
       _valueCtrls.putIfAbsent(userId, () => TextEditingController());
+
+  List<Map<String, dynamic>> _buildSplits() {
+    return _participants.map((id) {
+      final raw = _valueCtrls[id]?.text;
+      return <String, dynamic>{
+        'userId': id,
+        if (_splitMode != 'equal') 'value': double.tryParse(raw ?? '') ?? 0,
+      };
+    }).toList();
+  }
 
   Future<void> _submit(List<UserModel> members) async {
     final desc = _description.text.trim();
@@ -63,29 +99,39 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
       return;
     }
 
-    final splits = _participants.map((id) {
-      final raw = _valueCtrls[id]?.text;
-      return {
-        'userId': id,
-        if (_splitMode != 'equal') 'value': double.tryParse(raw ?? '') ?? 0,
-      };
-    }).toList();
-
     setState(() => _loading = true);
     try {
-      await ref.read(expenseRepositoryProvider).create(
-            groupId: widget.groupId,
-            description: desc,
-            amount: amount,
-            splitMode: _splitMode,
-            paidBy: _paidBy!,
-            splits: splits,
-            category: _category,
-            notes: _notes.text.trim(),
-          );
-      ref.invalidate(groupExpensesProvider(widget.groupId));
-      ref.invalidate(groupBalancesProvider(widget.groupId));
-      ref.invalidate(expenseFeedProvider);
+      if (widget.isEdit) {
+        final updated = await ref.read(expenseRepositoryProvider).update(
+              widget.initialExpense!.id,
+              description: desc,
+              amount: amount,
+              splitMode: _splitMode,
+              paidBy: _paidBy!,
+              splits: _buildSplits(),
+              category: _category,
+              notes: _notes.text.trim(),
+            );
+        final gid = updated.groupId;
+        ref.invalidate(groupExpensesProvider(gid));
+        ref.invalidate(groupBalancesProvider(gid));
+        ref.invalidate(expenseDetailProvider(updated.id));
+        ref.invalidate(expenseFeedProvider);
+      } else {
+        await ref.read(expenseRepositoryProvider).create(
+              groupId: widget.groupId!,
+              description: desc,
+              amount: amount,
+              splitMode: _splitMode,
+              paidBy: _paidBy!,
+              splits: _buildSplits(),
+              category: _category,
+              notes: _notes.text.trim(),
+            );
+        ref.invalidate(groupExpensesProvider(widget.groupId!));
+        ref.invalidate(groupBalancesProvider(widget.groupId!));
+        ref.invalidate(expenseFeedProvider);
+      }
       if (mounted) context.pop();
     } catch (e) {
       if (mounted) showErrorSnack(context, e, fallback: 'Could not save expense');
@@ -96,11 +142,12 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final groupAsync = ref.watch(groupDetailProvider(widget.groupId));
+    final effectiveGroupId = widget.groupId ?? widget.initialExpense!.groupId;
+    final groupAsync = ref.watch(groupDetailProvider(effectiveGroupId));
     final me = ref.watch(authProvider).user;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Add expense')),
+      appBar: AppBar(title: Text(widget.isEdit ? 'Edit expense' : 'Add expense')),
       body: SafeArea(
         child: groupAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
@@ -108,7 +155,8 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
           data: (group) {
             final members = group.members.map((m) => m.user).toList();
             _paidBy ??= me?.id ?? members.first.id;
-            if (_participants.isEmpty) {
+            // In create mode only: default all members as participants
+            if (!_prePopulated && _participants.isEmpty) {
               _participants.addAll(members.map((u) => u.id));
             }
             final amount = double.tryParse(_amount.text.trim()) ?? 0;
@@ -240,7 +288,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                 ),
                 const SizedBox(height: 22),
                 PrimaryButton(
-                  label: 'Save expense',
+                  label: widget.isEdit ? 'Save changes' : 'Save expense',
                   loading: _loading,
                   onPressed: () => _submit(members),
                 ),

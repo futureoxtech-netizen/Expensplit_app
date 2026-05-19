@@ -72,10 +72,20 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                               ),
                               child: Row(
                                 children: [
-                                  Avatar(
-                                    name: a.actorName ?? '?',
-                                    imageUrl: a.actorAvatar,
-                                    size: 38,
+                                  Stack(
+                                    clipBehavior: Clip.none,
+                                    children: [
+                                      Avatar(
+                                        name: a.actorName ?? '?',
+                                        imageUrl: a.actorAvatar,
+                                        size: 38,
+                                      ),
+                                      Positioned(
+                                        bottom: -2,
+                                        right: -2,
+                                        child: _activityBadge(a.type),
+                                      ),
+                                    ],
                                   ),
                                   const SizedBox(width: 12),
                                   Expanded(
@@ -124,6 +134,38 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _activityBadge(String type) {
+    IconData icon;
+    Color color;
+    switch (type) {
+      case 'expense.created':
+        icon = Icons.add_rounded;
+        color = Colors.green;
+        break;
+      case 'expense.updated':
+        icon = Icons.edit_rounded;
+        color = Colors.orange;
+        break;
+      case 'expense.deleted':
+        icon = Icons.delete_rounded;
+        color = Colors.red;
+        break;
+      case 'settlement.created':
+        icon = Icons.handshake_rounded;
+        color = Colors.blue;
+        break;
+      default:
+        icon = Icons.notifications_rounded;
+        color = Colors.grey;
+    }
+    return Container(
+      width: 18,
+      height: 18,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      child: Icon(icon, size: 11, color: Colors.white),
     );
   }
 }

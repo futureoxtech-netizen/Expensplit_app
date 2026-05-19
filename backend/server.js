@@ -2,7 +2,6 @@ import http from 'http';
 import { app } from './src/app.js';
 import { env } from './src/config/env.js';
 import { connectMongo } from './src/config/db.js';
-import { connectRedis } from './src/config/redis.js';
 import { initSocket } from './src/socket/index.js';
 import { logger } from './src/config/logger.js';
 
@@ -10,7 +9,6 @@ const server = http.createServer(app);
 
 async function bootstrap() {
   await connectMongo();
-  await connectRedis();
   initSocket(server);
 
   server.listen(env.PORT, () => {

@@ -25,9 +25,20 @@ class ExpenseDetailScreen extends ConsumerWidget {
         title: const Text('Expense'),
         actions: [
           async.maybeWhen(
-            data: (e) => IconButton(
-              icon: const Icon(Icons.delete_outline_rounded),
-              onPressed: () => _confirmDelete(context, ref, e.id, e.groupId),
+            data: (e) => Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.edit_rounded),
+                  tooltip: 'Edit',
+                  onPressed: () => context.push('/expenses/${e.id}/edit', extra: e),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline_rounded),
+                  tooltip: 'Delete',
+                  onPressed: () => _confirmDelete(context, ref, e.id, e.groupId),
+                ),
+              ],
             ),
             orElse: () => const SizedBox.shrink(),
           ),
@@ -158,6 +169,7 @@ class ExpenseDetailScreen extends ConsumerWidget {
       await ref.read(expenseRepositoryProvider).delete(id);
       ref.invalidate(groupExpensesProvider(groupId));
       ref.invalidate(groupBalancesProvider(groupId));
+      ref.invalidate(expenseDetailProvider(id));
       ref.invalidate(expenseFeedProvider);
       if (context.mounted) context.pop();
     } catch (e) {
