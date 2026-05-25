@@ -8,7 +8,8 @@ import { Activity } from '../activity/activity.model.js';
 import { Otp } from '../auth/otp.model.js';
 import { DeletedAccount } from '../auth/deleted_account.model.js';
 import { PersonalExpense } from '../personal/personal.model.js';
-import { NotFound } from '../../utils/errors.js';
+import { NotFound, BadRequest } from '../../utils/errors.js';
+import { uploadToS3 } from '../../middleware/upload.js';
 
 const updateSchema = z.object({
   name: z.string().min(2).max(80).optional(),
@@ -51,6 +52,19 @@ export const userController = {
         avatarUrl: u.avatarUrl,
       })),
     });
+  }),
+
+  // POST /users/me/avatar  (multipart/form-data, field: "image")
+  uploadAvatar: asyncHandler(async (req, res) => {
+    if (!req.file) throw BadRequest('No image file provided');
+    const url = await uploadToS3(req.file.buffer, req.file.mimetype, 'avatars');
+    if (!url) throw BadRequest('Image upload failed — please try again');
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { avatarUrl: url },
+      { new: true },
+    );
+    res.json({ ok: true, data: user.toPublic() });
   }),
 
   registerFcmToken: asyncHandler(async (req, res) => {

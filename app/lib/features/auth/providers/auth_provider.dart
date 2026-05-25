@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/errors/error_messages.dart';
@@ -139,6 +142,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<void> updateProfile({String? name, String? currency, String? bio}) async {
     final updated = await _repo.updateProfile(name: name, currency: currency, bio: bio);
+    state = state.copyWith(user: updated);
+  }
+
+  /// Pick & upload a new avatar. Pass [file] on mobile, [bytes]+[filename] on web.
+  Future<void> uploadAvatar({File? file, Uint8List? bytes, String? filename}) async {
+    final updated = await _repo.uploadAvatar(file: file, bytes: bytes, filename: filename);
     state = state.copyWith(user: updated);
   }
 

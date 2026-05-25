@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:path/path.dart' as p;
 
 import '../../../core/errors/failure.dart';
 import '../../../core/network/dio_client.dart';
@@ -198,6 +200,27 @@ class AuthRepository {
       return UserModel.fromJson(data);
     }
     throw Exception('Failed to update profile');
+  }
+
+  /// Upload a new avatar image. On web, [bytes] + [filename] are used
+  /// (dart:io File is not available). On mobile, pass [file].
+  Future<UserModel> uploadAvatar({File? file, Uint8List? bytes, String? filename}) async {
+    MultipartFile multipart;
+    if (kIsWeb) {
+      if (bytes == null || filename == null) throw ArgumentError('bytes and filename required on web');
+      multipart = MultipartFile.fromBytes(bytes, filename: filename);
+    } else {
+      if (file == null) throw ArgumentError('file required on mobile');
+      multipart = await MultipartFile.fromFile(file.path, filename: p.basename(file.path));
+    }
+    final form = FormData.fromMap({'image': multipart});
+    final res = await _client.raw.post('/users/me/avatar', data: form);
+    if (res.data is Map && (res.data['ok'] as bool? ?? false)) {
+      final data = res.data['data'] as Map<String, dynamic>;
+      await TokenStorage.instance.saveUserJson(jsonEncode(data));
+      return UserModel.fromJson(data);
+    }
+    throw Exception('Failed to upload avatar');
   }
 
   Future<UserModel> _persistFromResponse(dynamic raw) async {

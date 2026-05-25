@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from '../../middleware/auth.js';
 import { userController } from './user.controller.js';
+import { uploadMiddleware } from '../../middleware/upload.js';
 
 const router = Router();
 
@@ -10,6 +11,7 @@ router.get('/me', userController.getMe);
 router.patch('/me', userController.updateMe);
 router.delete('/me', userController.deleteMe);
 router.get('/search', userController.search);
+router.post('/me/avatar', uploadMiddleware, userController.uploadAvatar);
 router.post('/me/fcm-token', userController.registerFcmToken);
 router.post('/me/push-subscription', userController.registerPushSubscription);
 router.get('/friends-summary', userController.friendsSummary);

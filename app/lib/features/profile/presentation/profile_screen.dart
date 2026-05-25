@@ -1,6 +1,10 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/error_messages.dart';
@@ -20,11 +24,70 @@ const _supportedCurrencies = <String, String>{
   'AUD': r'Australian Dollar (A$)',
 };
 
-class ProfileScreen extends ConsumerWidget {
+class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends ConsumerState<ProfileScreen> {
+  bool _uploadingAvatar = false;
+
+  Future<void> _pickAndUploadAvatar() async {
+    final picker = ImagePicker();
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library_rounded),
+              title: const Text('Photo library'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+            if (!kIsWeb)
+              ListTile(
+                leading: const Icon(Icons.camera_alt_rounded),
+                title: const Text('Take photo'),
+                onTap: () => Navigator.pop(ctx, ImageSource.camera),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+
+    final XFile? picked = await picker.pickImage(
+      source: source,
+      imageQuality: 85,
+      maxWidth: 800,
+      maxHeight: 800,
+    );
+    if (picked == null || !mounted) return;
+
+    setState(() => _uploadingAvatar = true);
+    try {
+      if (kIsWeb) {
+        final bytes = await picked.readAsBytes();
+        await ref.read(authProvider.notifier).uploadAvatar(
+              bytes: bytes,
+              filename: picked.name,
+            );
+      } else {
+        await ref.read(authProvider.notifier).uploadAvatar(file: File(picked.path));
+      }
+      if (mounted) showSuccessSnack(context, 'Profile photo updated');
+    } catch (e) {
+      if (mounted) showErrorSnack(context, e, fallback: 'Could not upload photo');
+    } finally {
+      if (mounted) setState(() => _uploadingAvatar = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final user = ref.watch(authProvider).user;
     final mode = ref.watch(themeModeProvider);
 
@@ -36,7 +99,45 @@ class ProfileScreen extends ConsumerWidget {
           Center(
             child: Column(
               children: [
-                Avatar(name: user?.name ?? '?', imageUrl: user?.avatarUrl, size: 88),
+                GestureDetector(
+                  onTap: _pickAndUploadAvatar,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      _uploadingAvatar
+                          ? SizedBox(
+                              width: 88,
+                              height: 88,
+                              child: const CircularProgressIndicator(strokeWidth: 3),
+                            )
+                          : Avatar(
+                              name: user?.name ?? '?',
+                              imageUrl: user?.avatarUrl,
+                              size: 88,
+                            ),
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(5),
+                          decoration: BoxDecoration(
+                            gradient: AppColors.brandGradient,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Theme.of(context).scaffoldBackgroundColor,
+                              width: 2,
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.camera_alt_rounded,
+                            size: 14,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 12),
                 Text(
                   user?.name ?? '—',
@@ -89,7 +190,7 @@ class ProfileScreen extends ConsumerWidget {
             subtitle:
                 user == null ? null : '${user.currency} · ${_supportedCurrencies[user.currency] ?? ""}',
             trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: () => _pickCurrency(context, ref, user?.currency ?? 'USD'),
+            onTap: () => _pickCurrency(user?.currency ?? 'USD'),
           ),
           const SizedBox(height: 20),
           const _SectionTitle('Notifications'),
@@ -98,7 +199,7 @@ class ProfileScreen extends ConsumerWidget {
             title: 'Push notifications',
             subtitle: 'Receive alerts for new expenses, settlements and group activity.',
             trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: () => _openSystemNotificationSettings(context),
+            onTap: () => _openSystemNotificationSettings(),
           ),
           const SizedBox(height: 20),
           const _SectionTitle('About'),
@@ -134,9 +235,7 @@ class ProfileScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _openSystemNotificationSettings(BuildContext context) async {
-    // OneSignal handles permission internally; nudge the user to the
-    // system settings if they want to turn alerts off entirely.
+  void _openSystemNotificationSettings() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text(
@@ -148,7 +247,7 @@ class ProfileScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _pickCurrency(BuildContext context, WidgetRef ref, String current) async {
+  Future<void> _pickCurrency(String current) async {
     final picked = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
