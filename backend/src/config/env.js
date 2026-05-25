@@ -22,4 +22,16 @@ export const env = {
 
   UPLOAD_DIR: process.env.UPLOAD_DIR ?? './uploads',
   MAX_UPLOAD_MB: Number(process.env.MAX_UPLOAD_MB ?? 10),
+
+  SMTP_HOST: process.env.SMTP_HOST ?? 'mail.privateemail.com',
+  SMTP_PORT: Number(process.env.SMTP_PORT ?? 587),
+  SMTP_USER: required('SMTP_USER', ''),
+  SMTP_PASS: required('SMTP_PASS', ''),
+  SMTP_FROM: process.env.SMTP_FROM ?? 'Expensplit <noreply@example.com>',
+
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID ?? '',
+
+  // OneSignal push (leave blank to disable — sockets still work)
+  ONESIGNAL_APP_ID: process.env.ONESIGNAL_APP_ID ?? '',
+  ONESIGNAL_REST_API_KEY: process.env.ONESIGNAL_REST_API_KEY ?? '',
 };

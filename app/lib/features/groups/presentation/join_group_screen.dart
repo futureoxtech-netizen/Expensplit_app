@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/error_messages.dart';
+import '../../../core/network/realtime.dart';
 import '../../../shared/widgets/app_text_field.dart';
 import '../../../shared/widgets/primary_button.dart';
 import '../providers/group_providers.dart';
@@ -27,6 +28,9 @@ class _JoinGroupScreenState extends ConsumerState<JoinGroupScreen> {
     try {
       final group = await ref.read(groupRepositoryProvider).joinByCode(code);
       ref.invalidate(groupsListProvider);
+      // Subscribe to the new group's realtime room immediately so future
+      // events arrive without waiting for the next app launch / bootstrap.
+      ref.read(realtimeBridgeProvider).joinGroup(group.id);
       if (mounted) context.go('/groups/${group.id}');
     } catch (e) {
       if (mounted) showErrorSnack(context, e, fallback: 'Could not join group');

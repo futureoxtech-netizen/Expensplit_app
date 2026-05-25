@@ -7,6 +7,7 @@ import { Forbidden, NotFound } from '../../utils/errors.js';
 import { simplifyDebts } from '../../utils/simplifyDebts.js';
 import { emitToGroup } from '../../socket/index.js';
 import { activityService } from '../activity/activity.service.js';
+import { notifyUser, notifyUsers, notifyGroup, actorName } from '../../services/notifications.service.js';
 
 async function findGroupForMember(groupId, userId) {
   if (!mongoose.isValidObjectId(groupId)) throw NotFound('Group not found');
@@ -19,11 +20,13 @@ async function findGroupForMember(groupId, userId) {
 export const groupService = {
   async create({ userId, data }) {
     const members = [{ user: userId, role: 'owner' }];
+    const invitedIds = [];
     if (data.memberEmails?.length) {
       const others = await User.find({ email: { $in: data.memberEmails.map((e) => e.toLowerCase()) } });
       for (const u of others) {
         if (u._id.toString() !== userId.toString()) {
           members.push({ user: u._id, role: 'member' });
+          invitedIds.push(u._id);
         }
       }
     }
@@ -34,6 +37,24 @@ export const groupService = {
       type: 'group.created',
       message: `created group "${group.name}"`,
     });
+    // Tell everyone invited at creation that they were added to a new group.
+    // Without this, invitees only saw the group on next refresh and missed
+    // the real-time/push notification entirely.
+    if (invitedIds.length) {
+      const actor = await actorName(userId);
+      notifyUsers(
+        invitedIds,
+        {
+          title: 'New group',
+          message: `${actor} added you to "${group.name}"`,
+          type: 'group.member_added',
+          data: {
+            groupId: group._id.toString(),
+            route: `/groups/${group._id.toString()}`,
+          },
+        },
+      ).catch(() => {});
+    }
     return group;
   },
 
@@ -74,6 +95,16 @@ export const groupService = {
         message: `added ${user.name}`,
       });
       emitToGroup(group._id, 'group:updated', { groupId: group._id.toString() });
+      const actor = await actorName(userId);
+      notifyUser(user._id, {
+        title: 'New group',
+        message: `${actor} added you to "${group.name}"`,
+        type: 'group.member_added',
+        data: {
+          groupId: group._id.toString(),
+          route: `/groups/${group._id.toString()}`,
+        },
+      }).catch(() => {});
     }
     return group;
   },
@@ -92,6 +123,20 @@ export const groupService = {
         message: `${user?.name ?? 'A user'} joined via invite code`,
       });
       emitToGroup(group._id, 'group:updated', { groupId: group._id.toString() });
+      // Notify everyone already in the group that a new person joined.
+      notifyGroup(
+        group,
+        {
+          title: group.name,
+          message: `${user?.name ?? 'Someone'} joined the group`,
+          type: 'group.member_joined',
+          data: {
+            groupId: group._id.toString(),
+            route: `/groups/${group._id.toString()}`,
+          },
+        },
+        userId,
+      ).catch(() => {});
     }
     return group.populate('members.user', 'name email avatarUrl');
   },

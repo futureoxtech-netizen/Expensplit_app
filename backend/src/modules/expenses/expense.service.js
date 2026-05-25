@@ -5,6 +5,7 @@ import { computeShares } from '../../utils/splitCalculator.js';
 import { BadRequest, Forbidden, NotFound } from '../../utils/errors.js';
 import { emitToGroup } from '../../socket/index.js';
 import { activityService } from '../activity/activity.service.js';
+import { notifyUsers, actorName } from '../../services/notifications.service.js';
 
 async function getGroupAsMember(groupId, userId) {
   if (!mongoose.isValidObjectId(groupId)) throw NotFound('Group not found');
@@ -12,6 +13,35 @@ async function getGroupAsMember(groupId, userId) {
   if (!group) throw NotFound('Group not found');
   if (!group.isMember(userId)) throw Forbidden('Not a group member');
   return group;
+}
+
+// Replace any null populated-user refs with the snapshot name/email we saved at
+// deletion time (e.g. "Jane Smith (deleted)").  Falls back to a generic label
+// only if no snapshot was stored (very old records before this feature).
+const GHOST_USER = { _id: null, name: 'Deleted User', email: '', avatarUrl: null, deleted: true };
+
+function ghostFromSnapshot(snapshot) {
+  if (!snapshot || !snapshot.name) return GHOST_USER;
+  return {
+    _id: null,
+    name: `${snapshot.name} (deleted)`,
+    email: snapshot.email ?? '',
+    avatarUrl: snapshot.avatarUrl ?? null,
+    deleted: true,
+  };
+}
+
+function sanitiseExpense(exp) {
+  const obj = typeof exp.toObject === 'function' ? exp.toObject({ virtuals: false }) : { ...exp };
+  if (!obj.paidBy) {
+    obj.paidBy = ghostFromSnapshot(obj.paidBySnapshot);
+  }
+  if (Array.isArray(obj.shares)) {
+    obj.shares = obj.shares.map((s) =>
+      s.user ? s : { ...s, user: ghostFromSnapshot(s.userSnapshot) },
+    );
+  }
+  return obj;
 }
 
 function ensureSplitMembersInGroup(group, splits) {
@@ -68,7 +98,32 @@ export const expenseService = {
 
     emitToGroup(group._id, 'expense:created', { groupId: group._id.toString(), expenseId: expense._id.toString() });
 
-    return expense.populate(['paidBy', 'shares.user', 'createdBy']);
+    // Notify everybody in the group who is *involved* in the expense —
+    // i.e. the payer + every sharer — except the actor who just added it.
+    const recipientIds = new Set([
+      expense.paidBy.toString(),
+      ...expense.shares.map((s) => s.user.toString()),
+    ]);
+    recipientIds.delete(userId.toString());
+    if (recipientIds.size) {
+      const actor = await actorName(userId);
+      notifyUsers(
+        [...recipientIds],
+        {
+          title: `${group.name}`,
+          message: `${actor} added "${expense.description}" — ${expense.currency} ${expense.amount.toFixed(2)}`,
+          type: 'expense.created',
+          data: {
+            groupId: group._id.toString(),
+            expenseId: expense._id.toString(),
+            route: `/groups/${group._id.toString()}`,
+          },
+        },
+      ).catch(() => {});
+    }
+
+    const populated = await expense.populate(['paidBy', 'shares.user', 'createdBy']);
+    return sanitiseExpense(populated);
   },
 
   async list({ userId, groupId, page = 1, limit = 30 }) {
@@ -84,7 +139,7 @@ export const expenseService = {
         .lean(),
       Expense.countDocuments({ group: group._id, deletedAt: null }),
     ]);
-    return { items, total, page, limit, hasMore: skip + items.length < total };
+    return { items: items.map(sanitiseExpense), total, page, limit, hasMore: skip + items.length < total };
   },
 
   async getById({ userId, expenseId }) {
@@ -93,7 +148,7 @@ export const expenseService = {
       .populate('shares.user', 'name email avatarUrl');
     if (!expense || expense.deletedAt) throw NotFound('Expense not found');
     await getGroupAsMember(expense.group, userId);
-    return expense;
+    return sanitiseExpense(expense);
   },
 
   async update({ userId, expenseId, patch }) {
@@ -168,7 +223,31 @@ export const expenseService = {
       meta: { expenseId: expense._id.toString(), changes },
     });
     emitToGroup(group._id, 'expense:updated', { groupId: group._id.toString(), expenseId: expense._id.toString() });
-    return expense.populate(['paidBy', 'shares.user']);
+
+    const recipients = new Set([
+      expense.paidBy.toString(),
+      ...expense.shares.map((s) => s.user.toString()),
+    ]);
+    recipients.delete(userId.toString());
+    if (recipients.size && changes.length) {
+      const actor = await actorName(userId);
+      notifyUsers(
+        [...recipients],
+        {
+          title: group.name,
+          message: `${actor} edited "${expense.description}"`,
+          type: 'expense.updated',
+          data: {
+            groupId: group._id.toString(),
+            expenseId: expense._id.toString(),
+            route: `/groups/${group._id.toString()}`,
+          },
+        },
+      ).catch(() => {});
+    }
+
+    const updatedPopulated = await expense.populate(['paidBy', 'shares.user']);
+    return sanitiseExpense(updatedPopulated);
   },
 
   async remove({ userId, expenseId }) {
@@ -186,6 +265,29 @@ export const expenseService = {
       meta: { expenseId: expense._id.toString(), description: expense.description, amount: expense.amount, currency: expense.currency },
     });
     emitToGroup(group._id, 'expense:deleted', { groupId: group._id.toString(), expenseId: expense._id.toString() });
+
+    const recipients = new Set([
+      expense.paidBy.toString(),
+      ...expense.shares.map((s) => s.user.toString()),
+    ]);
+    recipients.delete(userId.toString());
+    if (recipients.size) {
+      const actor = await actorName(userId);
+      notifyUsers(
+        [...recipients],
+        {
+          title: group.name,
+          message: `${actor} deleted "${expense.description}"`,
+          type: 'expense.deleted',
+          data: {
+            groupId: group._id.toString(),
+            expenseId: expense._id.toString(),
+            route: `/groups/${group._id.toString()}`,
+          },
+        },
+      ).catch(() => {});
+    }
+
     return { ok: true };
   },
 
@@ -202,7 +304,7 @@ export const expenseService = {
         .lean(),
       Expense.countDocuments({ group: { $in: groupIds }, deletedAt: null }),
     ]);
-    return { items, total, page, limit, hasMore: skip + items.length < total };
+    return { items: items.map(sanitiseExpense), total, page, limit, hasMore: skip + items.length < total };
   },
 
   async report({ userId, from, to, groupId }) {

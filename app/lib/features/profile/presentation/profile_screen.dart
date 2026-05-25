@@ -92,12 +92,25 @@ class ProfileScreen extends ConsumerWidget {
             onTap: () => _pickCurrency(context, ref, user?.currency ?? 'USD'),
           ),
           const SizedBox(height: 20),
+          const _SectionTitle('Notifications'),
+          _Tile(
+            icon: Icons.notifications_active_rounded,
+            title: 'Push notifications',
+            subtitle: 'Receive alerts for new expenses, settlements and group activity.',
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => _openSystemNotificationSettings(context),
+          ),
+          const SizedBox(height: 20),
           const _SectionTitle('About'),
-          const _Tile(icon: Icons.info_outline_rounded, title: 'Version', subtitle: '0.1.0'),
+          const _Tile(
+            icon: Icons.info_outline_rounded,
+            title: 'Version',
+            subtitle: 'Expensplit 0.1.0',
+          ),
           const _Tile(
             icon: Icons.shield_outlined,
             title: 'Privacy',
-            subtitle: 'Your data stays local',
+            subtitle: 'Your data is encrypted in transit and only shared with members of groups you join.',
           ),
           const SizedBox(height: 24),
           OutlinedButton.icon(
@@ -114,7 +127,23 @@ class ProfileScreen extends ConsumerWidget {
             icon: const Icon(Icons.logout_rounded),
             label: const Text('Sign out'),
           ),
+          const SizedBox(height: 12),
+          _DeleteAccountButton(),
         ],
+      ),
+    );
+  }
+
+  Future<void> _openSystemNotificationSettings(BuildContext context) async {
+    // OneSignal handles permission internally; nudge the user to the
+    // system settings if they want to turn alerts off entirely.
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          "You'll get a banner whenever someone in your group adds an expense or settles up. "
+          "To turn alerts off, open your phone's notification settings for Expensplit.",
+        ),
+        duration: Duration(seconds: 4),
       ),
     );
   }
@@ -122,13 +151,20 @@ class ProfileScreen extends ConsumerWidget {
   Future<void> _pickCurrency(BuildContext context, WidgetRef ref, String current) async {
     final picked = await showModalBottomSheet<String>(
       context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      clipBehavior: Clip.antiAlias,
       backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      builder: (_) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
+      builder: (sheetCtx) => DraggableScrollableSheet(
+        initialChildSize: 0.55,
+        minChildSize: 0.3,
+        maxChildSize: 0.88,
+        expand: false,
+        builder: (_, scrollCtrl) => ListView(
+          controller: scrollCtrl,
           padding: const EdgeInsets.symmetric(vertical: 12),
           children: [
             Center(
@@ -155,7 +191,7 @@ class ProfileScreen extends ConsumerWidget {
                 trailing: entry.key == current
                     ? const Icon(Icons.check_rounded, color: AppColors.primary)
                     : null,
-                onTap: () => Navigator.pop(_, entry.key),
+                onTap: () => Navigator.pop(sheetCtx, entry.key),
               ),
             const SizedBox(height: 12),
           ],
@@ -225,6 +261,213 @@ class _Tile extends StatelessWidget {
         dense: true,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
+    );
+  }
+}
+
+// ── Delete Account Button ─────────────────────────────────────────────────────
+class _DeleteAccountButton extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<_DeleteAccountButton> createState() => _DeleteAccountButtonState();
+}
+
+class _DeleteAccountButtonState extends ConsumerState<_DeleteAccountButton> {
+  bool _loading = false;
+
+  Future<void> _confirm() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _DeleteAccountDialog(),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _loading = true);
+    try {
+      await ref.read(authProvider.notifier).deleteAccount();
+      if (mounted) {
+        context.go('/login');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Your account has been permanently deleted.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) showErrorSnack(context, e, fallback: 'Could not delete account');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: TextButton.icon(
+        onPressed: _loading ? null : _confirm,
+        icon: _loading
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.danger),
+              )
+            : const Icon(Icons.delete_forever_rounded, color: AppColors.danger, size: 20),
+        label: Text(
+          _loading ? 'Deleting account…' : 'Delete account',
+          style: const TextStyle(
+            color: AppColors.danger,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DeleteAccountDialog extends StatefulWidget {
+  @override
+  State<_DeleteAccountDialog> createState() => _DeleteAccountDialogState();
+}
+
+class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
+  final _ctrl = TextEditingController();
+  bool get _canDelete => _ctrl.text.trim() == 'DELETE';
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppColors.danger.withOpacity(0.12),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.warning_rounded, color: AppColors.danger, size: 22),
+          ),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              'Delete account?',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+            ),
+          ),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'This action is permanent and cannot be undone. Here is what will happen:',
+            style: TextStyle(fontSize: 14),
+          ),
+          const SizedBox(height: 12),
+          _BulletPoint(
+            icon: Icons.group_remove_rounded,
+            color: AppColors.warn,
+            text: 'You will be removed from all groups. If you are the owner, ownership transfers to the next member.',
+          ),
+          const SizedBox(height: 8),
+          _BulletPoint(
+            icon: Icons.receipt_long_rounded,
+            color: AppColors.primary,
+            text: 'Group expenses and settlements you created are kept for other members.',
+          ),
+          const SizedBox(height: 8),
+          _BulletPoint(
+            icon: Icons.person_remove_rounded,
+            color: AppColors.danger,
+            text: 'Your personal expenses and account data are permanently erased.',
+          ),
+          const SizedBox(height: 8),
+          _BulletPoint(
+            icon: Icons.email_rounded,
+            color: Colors.green,
+            text: 'You can re-register with the same email afterwards.',
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'Type DELETE to confirm',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: cs.onSurface.withOpacity(0.7),
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _ctrl,
+            autofocus: true,
+            textCapitalization: TextCapitalization.characters,
+            decoration: InputDecoration(
+              hintText: 'DELETE',
+              filled: true,
+              fillColor: AppColors.danger.withOpacity(0.06),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: AppColors.danger.withOpacity(0.3)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: AppColors.danger.withOpacity(0.3)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: AppColors.danger, width: 1.5),
+              ),
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _canDelete ? () => Navigator.pop(context, true) : null,
+          style: FilledButton.styleFrom(
+            backgroundColor: AppColors.danger,
+            disabledBackgroundColor: AppColors.danger.withOpacity(0.3),
+          ),
+          child: const Text('Delete forever'),
+        ),
+      ],
+    );
+  }
+}
+
+class _BulletPoint extends StatelessWidget {
+  const _BulletPoint({required this.icon, required this.color, required this.text});
+  final IconData icon;
+  final Color color;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(text, style: const TextStyle(fontSize: 13)),
+        ),
+      ],
     );
   }
 }

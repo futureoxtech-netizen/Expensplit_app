@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_colors.dart';
+import '../../../shared/widgets/brand_logo.dart';
 import '../../../shared/widgets/primary_button.dart';
 
 class _Slide {
@@ -50,6 +51,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       body: SafeArea(
         child: Column(
           children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 12, 24, 0),
+              child: BrandLockup(logoSize: 38, wordmarkFontSize: 20),
+            ),
             Expanded(
               child: PageView.builder(
                 controller: _controller,

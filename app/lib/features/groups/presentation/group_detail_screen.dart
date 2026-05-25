@@ -6,6 +6,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../shared/widgets/app_sheet.dart';
 import '../../../shared/widgets/avatar.dart';
 import '../../../shared/widgets/category_icon.dart';
 import '../../../shared/widgets/empty_state.dart';
@@ -100,53 +101,183 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
   }
 
   void _showInviteSheet(BuildContext context, GroupModel g) {
-    showModalBottomSheet(
+    showAppFixedSheet<void>(
       context: context,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+      builder: (sheetCtx) => _InviteSheet(group: g),
+    );
+  }
+}
+
+class _InviteSheet extends StatelessWidget {
+  const _InviteSheet({required this.group});
+  final GroupModel group;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 12, 24, 28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Grip (hidden on wide screens)
+            if (MediaQuery.of(context).size.width < 600)
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 18),
+                decoration: BoxDecoration(
+                  color: cs.onSurface.withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            // Gradient hero header
             Container(
-              width: 36, height: 4,
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(20, 22, 20, 22),
               decoration: BoxDecoration(
-                color: Theme.of(context).dividerColor,
-                borderRadius: BorderRadius.circular(2),
+                gradient: AppColors.brandGradient,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primary.withOpacity(0.3),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.22),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.qr_code_2_rounded,
+                      color: Colors.white,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Invite to group',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Share this code or QR with friends to join “${group.name}”.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 16),
-            const Text('Invite to group',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 16),
+            const SizedBox(height: 22),
+            // QR card
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: cs.onSurface.withOpacity(0.08)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
               ),
-              child: QrImageView(data: g.inviteCode, size: 180),
-            ),
-            const SizedBox(height: 16),
-            SelectableText(
-              g.inviteCode,
-              style: const TextStyle(
-                fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: 3,
+              child: QrImageView(
+                data: group.inviteCode,
+                size: 190,
+                eyeStyle: const QrEyeStyle(
+                  eyeShape: QrEyeShape.square,
+                  color: Color(0xFF6C5CE7),
+                ),
+                dataModuleStyle: const QrDataModuleStyle(
+                  dataModuleShape: QrDataModuleShape.square,
+                  color: Color(0xFF111126),
+                ),
               ),
             ),
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: g.inviteCode));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Invite code copied')),
-                );
-              },
-              icon: const Icon(Icons.copy_rounded),
-              label: const Text('Copy code'),
+            const SizedBox(height: 18),
+            // Code chip
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: AppColors.primary.withOpacity(0.25),
+                ),
+              ),
+              child: SelectableText(
+                group.inviteCode,
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 4,
+                  color: AppColors.primary,
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            // Action buttons
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: group.inviteCode));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Invite code copied'),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    },
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      side: BorderSide(
+                          color: AppColors.primary.withOpacity(0.4)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                    ),
+                    icon: const Icon(Icons.copy_rounded, size: 18),
+                    label: const Text(
+                      'Copy code',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                    ),
+                    icon: const Icon(Icons.check_rounded, size: 18),
+                    label: const Text(
+                      'Done',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -180,53 +311,22 @@ class _ExpensesTab extends ConsumerWidget {
               ],
             );
           }
+          final me = ref.read(authProvider).user;
           return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 120),
             itemCount: page.items.length,
             separatorBuilder: (_, __) => const SizedBox(height: 10),
             itemBuilder: (_, i) {
               final e = page.items[i];
-              return Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () => GoRouter.of(context).push('/expenses/${e.id}'),
-                  borderRadius: BorderRadius.circular(20),
-                  child: Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).cardTheme.color,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Theme.of(context).dividerColor),
-                    ),
-                    child: Row(
-                      children: [
-                        CategoryIcon(category: e.category),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(e.description,
-                                  style: const TextStyle(fontWeight: FontWeight.w700)),
-                              const SizedBox(height: 2),
-                              Text(
-                                '${e.paidBy.name} paid · ${DateFmt.relative(e.spentAt)}',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Text(
-                          Money.format(e.amount, code: e.currency),
-                          style: const TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+              final myShare = e.shares
+                  .where((s) => s.user.id == me?.id)
+                  .fold<double>(0, (a, s) => a + s.amount);
+              final iPaid = me != null && e.paidBy.id == me.id;
+              return _ExpenseRow(
+                expense: e,
+                myShare: myShare,
+                iPaid: iPaid,
+                onTap: () => GoRouter.of(context).push('/expenses/${e.id}'),
               );
             },
           );
@@ -363,6 +463,8 @@ class _BalancesTab extends ConsumerWidget {
     final entered = await showModalBottomSheet<double>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
+      clipBehavior: Clip.antiAlias,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => StatefulBuilder(
@@ -463,6 +565,9 @@ class _BalancesTab extends ConsumerWidget {
       if (context.mounted) {
         showModalBottomSheet(
           context: context,
+          isScrollControlled: true,
+          useSafeArea: true,
+          clipBehavior: Clip.antiAlias,
           shape: const RoundedRectangleBorder(
               borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
           builder: (modalCtx) => Padding(
@@ -591,28 +696,164 @@ class _MembersTab extends ConsumerWidget {
 
   Future<void> _invite(BuildContext context, WidgetRef ref) async {
     final ctrl = TextEditingController();
-    final email = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Invite by email'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'name@example.com'),
+    try {
+      final email = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Invite by email'),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(hintText: 'name@example.com'),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim()), child: const Text('Invite')),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim()), child: const Text('Invite')),
-        ],
+      );
+      if (email == null || email.isEmpty) return;
+      try {
+        await ref.read(groupRepositoryProvider).addMember(group.id, email);
+        ref.invalidate(groupDetailProvider(group.id));
+        if (context.mounted) showSuccessSnack(context, 'Member added');
+      } catch (e) {
+        if (context.mounted) showErrorSnack(context, e, fallback: 'Could not invite member');
+      }
+    } finally {
+      ctrl.dispose();
+    }
+  }
+}
+
+class _ExpenseRow extends StatelessWidget {
+  const _ExpenseRow({
+    required this.expense,
+    required this.myShare,
+    required this.iPaid,
+    required this.onTap,
+  });
+
+  final dynamic expense;
+  final double myShare;
+  final bool iPaid;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    // Net for me on this expense:
+    //   +full amount paid - my share = what I'm owed (positive)
+    //   or just -my share if I didn't pay (negative)
+    final myNet = (iPaid ? expense.amount as double : 0) - myShare;
+    final hasNet = myNet.abs() >= 0.01;
+    final netColor = myNet > 0 ? AppColors.accent : AppColors.danger;
+    final netLabel = myNet > 0 ? 'you get back' : 'you owe';
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardTheme.color,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Theme.of(context).dividerColor),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.03),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              CategoryIcon(category: expense.category, size: 44),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      expense.description,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(
+                          iPaid
+                              ? Icons.account_balance_wallet_rounded
+                              : Icons.person_outline_rounded,
+                          size: 12,
+                          color: cs.onSurface.withOpacity(0.55),
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            iPaid
+                                ? 'You paid · ${DateFmt.relative(expense.spentAt)}'
+                                : '${expense.paidBy.name} paid · ${DateFmt.relative(expense.spentAt)}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: cs.onSurface.withOpacity(0.6),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    Money.format(expense.amount, code: expense.currency),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 15,
+                    ),
+                  ),
+                  if (hasNet) ...[
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: netColor.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '$netLabel ${Money.format(myNet.abs(), code: expense.currency)}',
+                        style: TextStyle(
+                          color: netColor,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 10.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
-    if (email == null || email.isEmpty) return;
-    try {
-      await ref.read(groupRepositoryProvider).addMember(group.id, email);
-      ref.invalidate(groupDetailProvider(group.id));
-      if (context.mounted) showSuccessSnack(context, 'Member added');
-    } catch (e) {
-      if (context.mounted) showErrorSnack(context, e, fallback: 'Could not invite member');
-    }
   }
 }

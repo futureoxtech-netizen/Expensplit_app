@@ -36,17 +36,10 @@ class _FriendsSummaryScreenState extends ConsumerState<FriendsSummaryScreen> {
         onRefresh: () async => ref.invalidate(friendsSummaryProvider),
         child: CustomScrollView(
           slivers: [
-            SliverAppBar(
+            const SliverAppBar(
               pinned: true,
-              title: const Text('Friends',
+              title: Text('Friends',
                   style: TextStyle(fontWeight: FontWeight.w800)),
-              actions: [
-                IconButton(
-                  icon: const Icon(Icons.search_rounded),
-                  onPressed: () {},
-                ),
-                const SizedBox(width: 4),
-              ],
             ),
             async.when(
               loading: () =>

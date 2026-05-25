@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem -Path \"C:\\\\\", \"D:\\\\\", \"$env:USERPROFILE\" -Filter \"flutter.bat\" -Recurse -ErrorAction SilentlyContinue -Depth 5 | Select-Object -First 5 FullName)"
+    ]
+  }
+}

@@ -4,6 +4,7 @@ import { Group } from '../groups/group.model.js';
 import { BadRequest, Forbidden, NotFound } from '../../utils/errors.js';
 import { emitToGroup } from '../../socket/index.js';
 import { activityService } from '../activity/activity.service.js';
+import { notifyUser, actorName } from '../../services/notifications.service.js';
 
 async function assertMember(groupId, userId) {
   if (!mongoose.isValidObjectId(groupId)) throw NotFound('Group not found');
@@ -43,6 +44,33 @@ export const settlementService = {
       groupId: group._id.toString(),
       settlementId: settlement._id.toString(),
     });
+
+    // Notify the *recipient* of the payment. If the actor is the `from`
+    // party (the most common case — "I just paid you back"), tell `to`.
+    // If the actor logged it on behalf of someone else, notify both.
+    const actor = await actorName(userId);
+    const recipients = new Set();
+    if (userId.toString() === payload.from.toString()) {
+      recipients.add(payload.to);
+    } else if (userId.toString() === payload.to.toString()) {
+      recipients.add(payload.from);
+    } else {
+      recipients.add(payload.from);
+      recipients.add(payload.to);
+    }
+    for (const uid of recipients) {
+      notifyUser(uid, {
+        title: group.name,
+        message: `${actor} recorded a payment of ${settlement.currency} ${settlement.amount.toFixed(2)}`,
+        type: 'settlement.created',
+        data: {
+          groupId: group._id.toString(),
+          settlementId: settlement._id.toString(),
+          route: `/groups/${group._id.toString()}`,
+        },
+      }).catch(() => {});
+    }
+
     return settlement.populate(['from', 'to']);
   },
 

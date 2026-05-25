@@ -40,6 +40,8 @@ class AppTextField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -51,42 +53,54 @@ class AppTextField extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.75),
+                color: cs.onSurface.withOpacity(0.75),
               ),
             ),
           ),
-        TextFormField(
-          controller: controller,
-          initialValue: initialValue,
-          obscureText: obscureText,
-          keyboardType: keyboardType,
-          textInputAction: textInputAction,
-          validator: validator,
-          onChanged: onChanged,
-          onFieldSubmitted: onSubmitted,
-          maxLines: maxLines,
-          minLines: minLines,
-          enabled: enabled,
-          decoration: InputDecoration(
-            hintText: hint,
-            prefixIcon: prefixIcon != null
-                ? Icon(prefixIcon, size: 20)
-                : (prefixText != null
-                    ? Padding(
-                        padding: const EdgeInsets.fromLTRB(14, 0, 6, 0),
-                        child: Center(
-                          widthFactor: 1,
-                          child: Text(
-                            prefixText!,
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: TextFormField(
+            controller: controller,
+            initialValue: initialValue,
+            obscureText: obscureText,
+            keyboardType: keyboardType,
+            textInputAction: textInputAction,
+            validator: validator,
+            onChanged: onChanged,
+            onFieldSubmitted: onSubmitted,
+            maxLines: maxLines,
+            minLines: minLines,
+            enabled: enabled,
+            decoration: InputDecoration(
+              hintText: hint,
+              prefixIcon: prefixIcon != null
+                  ? Icon(prefixIcon, size: 20)
+                  : (prefixText != null
+                      ? Padding(
+                          padding: const EdgeInsets.fromLTRB(14, 0, 6, 0),
+                          child: Center(
+                            widthFactor: 1,
+                            child: Text(
+                              prefixText!,
+                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                            ),
                           ),
-                        ),
-                      )
-                    : null),
-            prefixIconConstraints: prefixText != null
-                ? const BoxConstraints(minWidth: 32, minHeight: 24)
-                : null,
-            suffixIcon: suffixIcon,
+                        )
+                      : null),
+              prefixIconConstraints: prefixText != null
+                  ? const BoxConstraints(minWidth: 32, minHeight: 24)
+                  : null,
+              suffixIcon: suffixIcon,
+            ),
           ),
         ),
       ],

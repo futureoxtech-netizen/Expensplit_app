@@ -30,7 +30,7 @@ class AppTheme {
         scrolledUnderElevation: 0,
         centerTitle: false,
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: AppColors.lightSurface,
         elevation: 0,
         margin: EdgeInsets.zero,
@@ -44,6 +44,7 @@ class AppTheme {
         border: AppColors.lightBorder,
         text: AppColors.lightOnSurface,
         hint: AppColors.lightMuted,
+        isDark: false,
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
@@ -61,6 +62,11 @@ class AppTheme {
         labelTextStyle: WidgetStatePropertyAll(
           GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 12),
         ),
+      ),
+      chipTheme: _chipTheme(
+        bg: AppColors.lightSurface,
+        text: AppColors.lightOnSurface,
+        border: AppColors.lightBorder,
       ),
     );
   }
@@ -84,7 +90,7 @@ class AppTheme {
         scrolledUnderElevation: 0,
         centerTitle: false,
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: AppColors.darkSurface,
         elevation: 0,
         margin: EdgeInsets.zero,
@@ -98,6 +104,7 @@ class AppTheme {
         border: AppColors.darkBorder,
         text: AppColors.darkOnSurface,
         hint: AppColors.darkMuted,
+        isDark: true,
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
@@ -116,6 +123,42 @@ class AppTheme {
           GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 12),
         ),
       ),
+      chipTheme: _chipTheme(
+        bg: AppColors.darkSurface,
+        text: AppColors.darkOnSurface,
+        border: AppColors.darkBorder,
+      ),
+    );
+  }
+
+  /// Shared ChoiceChip/FilterChip styling. Selected chips use the brand
+  /// primary as the fill with white text+icon for high contrast, instead
+  /// of Material's default low-contrast tinted background.
+  static ChipThemeData _chipTheme({
+    required Color bg,
+    required Color text,
+    required Color border,
+  }) {
+    return ChipThemeData(
+      backgroundColor: bg,
+      selectedColor: AppColors.primary,
+      disabledColor: bg,
+      labelStyle: GoogleFonts.inter(
+        fontWeight: FontWeight.w600,
+        fontSize: 13,
+        color: text,
+      ),
+      secondaryLabelStyle: GoogleFonts.inter(
+        fontWeight: FontWeight.w700,
+        fontSize: 13,
+        color: Colors.white,
+      ),
+      checkmarkColor: Colors.white,
+      side: BorderSide(color: border, width: 1.2),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+      showCheckmark: true,
+      iconTheme: const IconThemeData(size: 16, color: Colors.white),
     );
   }
 
@@ -124,29 +167,40 @@ class AppTheme {
     required Color border,
     required Color text,
     required Color hint,
+    required bool isDark,
   }) {
     final radius = BorderRadius.circular(14);
+    // Light mode: darken the border so it stands out against the white fill.
+    // Dark mode:  lighten the border so it stands out against the dark fill.
+    // 0.30 darkening / 0.28 lightening gives a clearly visible but not harsh stroke.
+    final visibleBorder = isDark
+        ? Color.lerp(border, Colors.white, 0.28)!
+        : Color.lerp(border, Colors.black, 0.30)!;
     return InputDecorationTheme(
       filled: true,
       fillColor: fill,
       hintStyle: GoogleFonts.inter(color: hint, fontSize: 14),
       labelStyle: GoogleFonts.inter(color: hint, fontSize: 13, fontWeight: FontWeight.w500),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       border: OutlineInputBorder(
         borderRadius: radius,
-        borderSide: BorderSide(color: border),
+        borderSide: BorderSide(color: visibleBorder, width: 1.5),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: radius,
-        borderSide: BorderSide(color: border),
+        borderSide: BorderSide(color: visibleBorder, width: 1.5),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: radius,
-        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+        borderSide: const BorderSide(color: AppColors.primary, width: 2),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: radius,
-        borderSide: const BorderSide(color: AppColors.danger),
+        borderSide: const BorderSide(color: AppColors.danger, width: 1.5),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: radius,
+        borderSide: const BorderSide(color: AppColors.danger, width: 2),
       ),
     );
   }

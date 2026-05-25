@@ -26,7 +26,7 @@ app.use(
 
 app.use('/uploads', express.static(path.resolve(env.UPLOAD_DIR)));
 
-app.get('/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
+app.get('/health', (_req, res) => res.json({ ok: true, ts: Date.now(), service: 'expensplit-api' }));
 
 app.use('/api/v1', router);
 

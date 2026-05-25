@@ -110,7 +110,23 @@ String? _byCode(String? code) {
       return 'Wrong email or password.';
     case 'EMAIL_TAKEN':
     case 'DUPLICATE':
-      return 'That email is already registered.';
+      return 'An account with this email already exists. Please sign in instead.';
+    case 'USE_GOOGLE':
+      return 'This account was created with Google Sign-In. Please use the "Continue with Google" button.';
+    case 'USER_NOT_FOUND':
+      return 'No account found with that email address.';
+    case 'OTP_COOLDOWN':
+      return 'Please wait before requesting another code.';
+    case 'OTP_EXPIRED':
+      return 'The code has expired. Please request a new one.';
+    case 'OTP_INVALID':
+      return null; // use server message which includes remaining attempts
+    case 'OTP_MAX_ATTEMPTS':
+      return 'Too many incorrect attempts. Please request a new code.';
+    case 'GOOGLE_NOT_CONFIGURED':
+      return 'Google Sign-In is not available right now.';
+    case 'ACCOUNT_DELETED_COOLDOWN':
+      return null; // server message includes hours remaining — use it as-is
     case 'UNAUTHORIZED':
       return 'Your session has expired. Please sign in again.';
     case 'FORBIDDEN':

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/errors/error_messages.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../core/network/realtime.dart';
+import '../../../core/services/push_notifications_service.dart';
 import '../data/auth_repository.dart';
 import '../data/user_model.dart';
 
@@ -48,6 +49,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
       if (u != null) state = state.copyWith(user: u);
     }).catchError((_) {});
     _realtime.bootstrap();
+    PushNotificationsService.instance.loginUser(cached.id);
+  }
+
+  Future<void> sendOtp(String email) async {
+    await _repo.sendOtp(email);
   }
 
   Future<void> login(String email, String password) async {
@@ -56,6 +62,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
       final user = await _repo.login(email: email, password: password);
       state = AuthState(status: AuthStatus.authenticated, user: user);
       await _realtime.bootstrap();
+      await PushNotificationsService.instance.requestPermission();
+      await PushNotificationsService.instance.loginUser(user.id);
     } catch (e) {
       state = state.copyWith(error: _errorMessage(e));
       rethrow;
@@ -66,6 +74,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     required String name,
     required String email,
     required String password,
+    required String otp,
     String currency = 'USD',
   }) async {
     state = state.copyWith(clearError: true);
@@ -75,9 +84,26 @@ class AuthNotifier extends StateNotifier<AuthState> {
         email: email,
         password: password,
         currency: currency,
+        otp: otp,
       );
       state = AuthState(status: AuthStatus.authenticated, user: user);
       await _realtime.bootstrap();
+      await PushNotificationsService.instance.requestPermission();
+      await PushNotificationsService.instance.loginUser(user.id);
+    } catch (e) {
+      state = state.copyWith(error: _errorMessage(e));
+      rethrow;
+    }
+  }
+
+  Future<void> googleSignIn() async {
+    state = state.copyWith(clearError: true);
+    try {
+      final user = await _repo.googleSignIn();
+      state = AuthState(status: AuthStatus.authenticated, user: user);
+      await _realtime.bootstrap();
+      await PushNotificationsService.instance.requestPermission();
+      await PushNotificationsService.instance.loginUser(user.id);
     } catch (e) {
       state = state.copyWith(error: _errorMessage(e));
       rethrow;
@@ -87,7 +113,24 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> logout() async {
     await _repo.logout();
     _realtime.disconnect();
+    await PushNotificationsService.instance.logoutUser();
     state = const AuthState(status: AuthStatus.unauthenticated);
+  }
+
+  Future<void> sendForgotOtp(String email) async {
+    await _repo.sendForgotOtp(email);
+  }
+
+  Future<void> verifyResetOtp({required String email, required String otp}) async {
+    await _repo.verifyResetOtp(email: email, otp: otp);
+  }
+
+  Future<void> resetPassword({
+    required String email,
+    required String otp,
+    required String newPassword,
+  }) async {
+    await _repo.resetPassword(email: email, otp: otp, newPassword: newPassword);
   }
 
   void updateUser(UserModel user) {
@@ -97,6 +140,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> updateProfile({String? name, String? currency, String? bio}) async {
     final updated = await _repo.updateProfile(name: name, currency: currency, bio: bio);
     state = state.copyWith(user: updated);
+  }
+
+  Future<void> deleteAccount() async {
+    await _repo.deleteAccount();
+    await _repo.googleSignOut();
+    _realtime.disconnect();
+    await PushNotificationsService.instance.logoutUser();
+    state = const AuthState(status: AuthStatus.unauthenticated);
   }
 
   String _errorMessage(Object e) => friendlyError(e);

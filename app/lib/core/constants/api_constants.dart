@@ -10,8 +10,8 @@ class ApiConstants {
   static String get baseUrl {
     if (_override.isNotEmpty) return _override;
     if (kIsWeb) return 'http://localhost:4000';
-    // For physical Android devices, change to your machine LAN IP via --dart-define.
-    return 'http://10.0.2.2:4000';
+    // Physical device — PC LAN IP on Wi-Fi 2
+    return 'http://10.87.80.167:4000';
   }
 
   static String get apiV1 => '$baseUrl/api/v1';

@@ -26,6 +26,12 @@ import '../../features/groups/presentation/friends_summary_screen.dart';
 import '../../features/groups/presentation/friend_detail_screen.dart';
 import '../../features/groups/data/friend_summary_model.dart';
 import '../../features/personal/presentation/personal_tracker_screen.dart';
+import '../../features/auth/presentation/verify_email_screen.dart';
+import '../../features/auth/presentation/forgot_password_screen.dart';
+import '../../features/auth/presentation/verify_reset_screen.dart';
+import '../../features/auth/presentation/reset_password_screen.dart';
+import '../../features/goals/presentation/goals_screen.dart';
+import '../../features/goals/presentation/goal_detail_screen.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final notifier = _AuthRefresh(ref);
@@ -43,6 +49,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final loggedIn = status == AuthStatus.authenticated;
       final goingToAuth = loc == '/login' ||
           loc == '/register' ||
+          loc == '/verify-email' ||
+          loc == '/forgot-password' ||
+          loc == '/verify-reset' ||
+          loc == '/reset-password' ||
           loc == '/onboarding' ||
           loc == '/splash';
 
@@ -61,6 +71,39 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/onboarding', builder: (_, __) => const OnboardingScreen()),
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
       GoRoute(path: '/register', builder: (_, __) => const RegisterScreen()),
+      GoRoute(
+        path: '/verify-email',
+        builder: (_, state) {
+          final extra = state.extra as Map<String, dynamic>;
+          return VerifyEmailScreen(
+            name: extra['name'] as String,
+            email: extra['email'] as String,
+            password: extra['password'] as String,
+            currency: extra['currency'] as String,
+          );
+        },
+      ),
+      GoRoute(
+        path: '/forgot-password',
+        builder: (_, __) => const ForgotPasswordScreen(),
+      ),
+      GoRoute(
+        path: '/verify-reset',
+        builder: (_, state) {
+          final extra = state.extra as Map<String, dynamic>;
+          return VerifyResetScreen(email: extra['email'] as String);
+        },
+      ),
+      GoRoute(
+        path: '/reset-password',
+        builder: (_, state) {
+          final extra = state.extra as Map<String, dynamic>;
+          return ResetPasswordScreen(
+            email: extra['email'] as String,
+            otp: extra['otp'] as String,
+          );
+        },
+      ),
 
       ShellRoute(
         builder: (context, state, child) => HomeShell(child: child),
@@ -69,6 +112,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/groups', builder: (_, __) => const GroupsScreen()),
           GoRoute(path: '/friends', builder: (_, __) => const FriendsSummaryScreen()),
           GoRoute(path: '/tracker', builder: (_, __) => const PersonalTrackerScreen()),
+          GoRoute(path: '/goals', builder: (_, __) => const GoalsScreen()),
           GoRoute(path: '/activity', builder: (_, __) => const ActivityScreen()),
           GoRoute(path: '/profile', builder: (_, __) => const ProfileScreen()),
         ],
@@ -122,6 +166,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(path: '/reports', builder: (_, __) => const ReportsScreen()),
+      GoRoute(
+        path: '/goals/:id',
+        builder: (_, s) => GoalDetailScreen(goalId: s.pathParameters['id']!),
+      ),
     ],
   );
 });

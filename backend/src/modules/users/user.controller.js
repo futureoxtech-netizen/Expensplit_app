@@ -4,6 +4,10 @@ import { User } from './user.model.js';
 import { Group } from '../groups/group.model.js';
 import { Expense } from '../expenses/expense.model.js';
 import { Settlement } from '../settlements/settlement.model.js';
+import { Activity } from '../activity/activity.model.js';
+import { Otp } from '../auth/otp.model.js';
+import { DeletedAccount } from '../auth/deleted_account.model.js';
+import { PersonalExpense } from '../personal/personal.model.js';
 import { NotFound } from '../../utils/errors.js';
 
 const updateSchema = z.object({
@@ -57,6 +61,19 @@ export const userController = {
     res.json({ ok: true });
   }),
 
+  // Called by the Flutter client after OneSignal hands us a subscription id.
+  // Stored mainly for debugging/diagnostics — the primary push delivery path
+  // targets external_id == user._id, which the client sets on login.
+  registerPushSubscription: asyncHandler(async (req, res) => {
+    const subscriptionId = String(req.body?.subscriptionId || req.body?.playerId || '').trim();
+    if (subscriptionId) {
+      await User.findByIdAndUpdate(req.user.id, {
+        $addToSet: { oneSignalIds: subscriptionId },
+      });
+    }
+    res.json({ ok: true });
+  }),
+
   friendsSummary: asyncHandler(async (req, res) => {
     const userId = req.user.id.toString();
 
@@ -71,6 +88,7 @@ export const userController = {
     for (const group of groups) {
       // Collect friend info from members
       for (const m of group.members) {
+        if (!m.user) continue; // user deleted their account
         const mid = (m.user._id ?? m.user).toString();
         if (mid !== userId && m.user.name && !friendUserMap.has(mid)) {
           friendUserMap.set(mid, m.user);
@@ -84,17 +102,19 @@ export const userController = {
       const pairwise = new Map();
 
       for (const exp of expenses) {
+        if (!exp.paidBy) continue; // payer deleted their account — skip
         const payer = exp.paidBy.toString();
         if (payer === userId) {
           // I paid — each sharer owes me their share
           for (const share of exp.shares) {
+            if (!share.user) continue; // sharer deleted their account
             const debtor = share.user.toString();
             if (debtor === userId) continue;
             pairwise.set(debtor, (pairwise.get(debtor) ?? 0) + share.amount);
           }
         } else {
           // Someone else paid — I owe them my share
-          const myShare = exp.shares.find((s) => s.user.toString() === userId);
+          const myShare = exp.shares.find((s) => s.user && s.user.toString() === userId);
           if (myShare) {
             pairwise.set(payer, (pairwise.get(payer) ?? 0) - myShare.amount);
           }
@@ -187,13 +207,15 @@ export const userController = {
       .lean();
 
     const expenseItems = expenses.map((exp) => {
-      const payer = (exp.paidBy._id ?? exp.paidBy).toString();
+      // paidBy may be null if the paying user deleted their account
+      const payerObj = exp.paidBy;
+      const payer = payerObj ? (payerObj._id ?? payerObj).toString() : null;
       let net = 0;
       if (payer === userId) {
-        const share = exp.shares.find((s) => s.user.toString() === friendId);
+        const share = exp.shares.find((s) => s.user && s.user.toString() === friendId);
         net = share?.amount ?? 0; // friend owes me
       } else {
-        const share = exp.shares.find((s) => s.user.toString() === userId);
+        const share = exp.shares.find((s) => s.user && s.user.toString() === userId);
         net = -(share?.amount ?? 0); // I owe friend
       }
       const grp = groupMap.get(exp.group.toString());
@@ -237,5 +259,77 @@ export const userController = {
     );
 
     res.json({ ok: true, data: { transactions: all, groups: [...groupMap.values()].map(g => ({ id: g._id.toString(), name: g.name, coverColor: g.coverColor })) } });
+  }),
+
+  // ── Delete account ────────────────────────────────────────────────────────
+  deleteMe: asyncHandler(async (req, res) => {
+    const userId = req.user.id.toString();
+
+    // ── Step 0: Load user before anything else ────────────────────────────
+    const user = await User.findById(userId);
+    if (!user) throw NotFound('User not found');
+    const snapshot = { name: user.name, email: user.email, avatarUrl: user.avatarUrl ?? null };
+
+    // ── Step 1: Freeze user's name into every group expense they touched ──
+    // So group members still see "Jane Smith (deleted)" not "Deleted User".
+    await Expense.updateMany(
+      { paidBy: userId, deletedAt: null },
+      { $set: { paidBySnapshot: snapshot } },
+    );
+    await Expense.updateMany(
+      { 'shares.user': userId, deletedAt: null },
+      { $set: { 'shares.$[elem].userSnapshot': snapshot } },
+      { arrayFilters: [{ 'elem.user': user._id }] },
+    );
+
+    // ── Step 2: Handle groups ─────────────────────────────────────────────
+    const myGroups = await Group.find({ 'members.user': userId });
+
+    for (const group of myGroups) {
+      const otherMembers = group.members.filter((m) => m.user.toString() !== userId);
+
+      if (otherMembers.length === 0) {
+        // Sole member — delete everything related to this group
+        await Expense.deleteMany({ group: group._id });
+        await Settlement.deleteMany({ group: group._id });
+        await Activity.deleteMany({ group: group._id });
+        await group.deleteOne();
+      } else {
+        // Has other members
+        const role = group.members.find((m) => m.user.toString() === userId)?.role;
+
+        if (role === 'owner') {
+          // Transfer ownership: prefer an existing admin, else the earliest-joined member
+          const nextOwner =
+            otherMembers.find((m) => m.role === 'admin') ?? otherMembers[0];
+          group.members = group.members
+            .filter((m) => m.user.toString() !== userId)
+            .map((m) => {
+              if (m.user.toString() === nextOwner.user.toString()) {
+                return { ...m.toObject(), role: 'owner' };
+              }
+              return m.toObject();
+            });
+        } else {
+          // Just remove from members
+          group.members = group.members.filter((m) => m.user.toString() !== userId);
+        }
+
+        await group.save();
+      }
+    }
+
+    // ── Step 3: Wipe personal data ────────────────────────────────────────
+    await PersonalExpense.deleteMany({ user: userId });
+    await Otp.deleteMany({ email: user.email });
+    await Activity.deleteMany({ actor: userId, group: null });
+
+    // ── Step 4: Record deletion for 3-day re-registration cooldown ────────
+    await DeletedAccount.create({ email: user.email, name: user.name, avatarUrl: user.avatarUrl ?? null });
+
+    // ── Step 5: Delete the user document ─────────────────────────────────
+    await User.findByIdAndDelete(userId);
+
+    res.json({ ok: true, message: 'Account deleted successfully' });
   }),
 };

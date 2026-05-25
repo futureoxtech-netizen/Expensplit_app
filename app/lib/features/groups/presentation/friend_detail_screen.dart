@@ -186,6 +186,8 @@ class FriendDetailScreen extends ConsumerWidget {
     final settled = await showModalBottomSheet<double>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
+      clipBehavior: Clip.antiAlias,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => _SettleUpSheet(
@@ -204,6 +206,9 @@ class FriendDetailScreen extends ConsumerWidget {
       BuildContext context, double amount, String currency, String name) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      clipBehavior: Clip.antiAlias,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (modalCtx) => Padding(

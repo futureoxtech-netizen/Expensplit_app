@@ -4,6 +4,13 @@ const shareSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     amount: { type: Number, required: true },
+    // Snapshot of the user's display info, written when the user deletes their account.
+    // Allows showing "John Doe (deleted)" in expense lists even after the user is gone.
+    userSnapshot: {
+      name: { type: String, default: null },
+      email: { type: String, default: null },
+      avatarUrl: { type: String, default: null },
+    },
   },
   { _id: false },
 );
@@ -40,6 +47,12 @@ const expenseSchema = new mongoose.Schema(
       required: true,
     },
     paidBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    // Written on account deletion so the payer's identity is preserved in expense history.
+    paidBySnapshot: {
+      name: { type: String, default: null },
+      email: { type: String, default: null },
+      avatarUrl: { type: String, default: null },
+    },
     shares: { type: [shareSchema], required: true },
     tax: { type: Number, default: 0 },
     tip: { type: Number, default: 0 },

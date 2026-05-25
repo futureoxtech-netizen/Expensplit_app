@@ -6,6 +6,7 @@ class ActivityItem {
     required this.type,
     required this.message,
     required this.createdAt,
+    this.actorId,
     this.actorName,
     this.actorAvatar,
     this.groupName,
@@ -21,6 +22,7 @@ class ActivityItem {
       type: j['type']?.toString() ?? 'event',
       message: j['message']?.toString() ?? '',
       createdAt: DateTime.tryParse(j['createdAt']?.toString() ?? '') ?? DateTime.now(),
+      actorId: actor is Map ? (actor['_id'] ?? actor['id'])?.toString() : null,
       actorName: actor is Map ? actor['name']?.toString() : null,
       actorAvatar: actor is Map ? actor['avatarUrl']?.toString() : null,
       groupId: group is Map ? (group['_id'] ?? group['id'])?.toString() : group?.toString(),
@@ -33,6 +35,7 @@ class ActivityItem {
   final String type;
   final String message;
   final DateTime createdAt;
+  final String? actorId;
   final String? actorName;
   final String? actorAvatar;
   final String? groupName;

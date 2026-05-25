@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../app/theme/app_colors.dart';
+import '../../../shared/widgets/brand_logo.dart';
 
 class SplashScreen extends StatelessWidget {
   const SplashScreen({super.key});
@@ -19,16 +20,23 @@ class SplashScreen extends StatelessWidget {
               opacity: v.clamp(0, 1),
               child: Transform.scale(
                 scale: v,
-                child: Container(
-                  width: 88, height: 88,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(28),
-                    gradient: AppColors.brandGradient,
-                    boxShadow: [
-                      BoxShadow(color: AppColors.primary.withOpacity(0.5), blurRadius: 30, offset: const Offset(0, 12)),
-                    ],
-                  ),
-                  child: const Icon(Icons.account_balance_wallet_rounded, color: Colors.white, size: 44),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const BrandLogo(size: 120, showGradientBackdrop: true),
+                    const SizedBox(height: 16),
+                    const BrandWordmark(fontSize: 30),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Split bills. Stay friends.',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.7),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             );

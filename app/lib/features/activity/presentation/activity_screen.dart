@@ -8,6 +8,8 @@ import '../../../shared/widgets/avatar.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/gradient_scaffold.dart';
 import '../../../shared/widgets/shimmer_loader.dart';
+import '../../auth/providers/auth_provider.dart';
+import '../data/activity_repository.dart';
 import '../providers/activity_providers.dart';
 import '../providers/unread_provider.dart';
 
@@ -30,6 +32,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
   @override
   Widget build(BuildContext context) {
     final async = ref.watch(activityFeedProvider);
+    final meId = ref.watch(authProvider).user?.id;
     return GradientScaffold(
       padding: EdgeInsets.zero,
       child: RefreshIndicator(
@@ -56,82 +59,112 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                     for (final a in items)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 10),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(18),
-                            onTap: a.groupId == null
-                                ? null
-                                : () => context.push('/groups/${a.groupId}'),
-                            child: Container(
-                              padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).cardTheme.color,
-                                borderRadius: BorderRadius.circular(18),
-                                border: Border.all(color: Theme.of(context).dividerColor),
-                              ),
-                              child: Row(
-                                children: [
-                                  Stack(
-                                    clipBehavior: Clip.none,
-                                    children: [
-                                      Avatar(
-                                        name: a.actorName ?? '?',
-                                        imageUrl: a.actorAvatar,
-                                        size: 38,
-                                      ),
-                                      Positioned(
-                                        bottom: -2,
-                                        right: -2,
-                                        child: _activityBadge(a.type),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text.rich(
-                                          TextSpan(
-                                            children: [
-                                              TextSpan(
-                                                text: a.actorName ?? 'Someone',
-                                                style: const TextStyle(fontWeight: FontWeight.w700),
-                                              ),
-                                              TextSpan(text: ' ${a.message}'),
-                                              if (a.groupName != null) ...[
-                                                const TextSpan(text: ' · '),
-                                                TextSpan(
-                                                  text: a.groupName,
-                                                  style: const TextStyle(fontWeight: FontWeight.w600),
-                                                ),
-                                              ],
-                                            ],
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          DateFmt.relative(a.createdAt),
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.55),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
+                        child: _ActivityTile(item: a, meId: meId),
                       ),
                   ],
                 );
               },
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+}
+
+class _ActivityTile extends StatelessWidget {
+  const _ActivityTile({required this.item, required this.meId});
+  final ActivityItem item;
+  final String? meId;
+
+  bool get _isMe => meId != null && item.actorId == meId;
+
+  String _displayName() => _isMe ? 'You' : (item.actorName ?? 'Someone');
+
+  /// Rewrite messages so they read naturally with "You" instead of name.
+  /// Some backend events embed the actor's own name into the message body
+  /// (e.g. group.member_joined: "Arbaz joined via invite code"). Strip it
+  /// so we don't get "You Arbaz joined…".
+  String _displayMessage() {
+    final m = item.message;
+    if (!_isMe) return m;
+    final name = item.actorName;
+    if (name == null) return m;
+    if (m.startsWith('$name ')) return m.substring(name.length + 1);
+    return m;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: item.groupId == null
+            ? null
+            : () => context.push('/groups/${item.groupId}'),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardTheme.color,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Theme.of(context).dividerColor),
+          ),
+          child: Row(
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Avatar(
+                    name: _displayName(),
+                    imageUrl: item.actorAvatar,
+                    size: 40,
+                  ),
+                  Positioned(
+                    bottom: -2,
+                    right: -2,
+                    child: _activityBadge(item.type),
+                  ),
+                ],
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: _displayName(),
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          TextSpan(text: ' ${_displayMessage()}'),
+                          if (item.groupName != null) ...[
+                            const TextSpan(text: ' · '),
+                            TextSpan(
+                              text: item.groupName,
+                              style: const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      DateFmt.relative(item.createdAt),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: cs.onSurface.withOpacity(0.55),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
