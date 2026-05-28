@@ -84,7 +84,12 @@ export const groupService = {
     const role = group.roleOf(userId);
     if (!['owner', 'admin'].includes(role)) throw Forbidden('Only admins can invite members');
     const user = await User.findOne({ email: email.toLowerCase() });
-    if (!user) throw NotFound('User not found');
+    if (!user) {
+      throw NotFound(
+        "This person doesn't have an Expensplit account yet. Ask them to install the app and sign up with this email.",
+        'EMAIL_NOT_REGISTERED',
+      );
+    }
     if (!group.isMember(user._id)) {
       group.members.push({ user: user._id, role: 'member' });
       await group.save();

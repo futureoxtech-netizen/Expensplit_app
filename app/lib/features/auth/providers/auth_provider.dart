@@ -7,6 +7,7 @@ import '../../../core/errors/error_messages.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../core/network/realtime.dart';
 import '../../../core/services/push_notifications_service.dart';
+import '../../../core/storage/token_storage.dart';
 import '../data/auth_repository.dart';
 import '../data/user_model.dart';
 
@@ -116,6 +117,17 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> logout() async {
     await _repo.logout();
     _realtime.disconnect();
+    await PushNotificationsService.instance.logoutUser();
+    state = const AuthState(status: AuthStatus.unauthenticated);
+  }
+
+  /// Called by the network layer when refresh is no longer possible (refresh
+  /// token revoked, expired, or rotated by another device). Clears local state
+  /// without hitting the server — the server already considers us logged out.
+  Future<void> forceLogout() async {
+    if (state.status == AuthStatus.unauthenticated) return;
+    _realtime.disconnect();
+    await TokenStorage.instance.clear();
     await PushNotificationsService.instance.logoutUser();
     state = const AuthState(status: AuthStatus.unauthenticated);
   }

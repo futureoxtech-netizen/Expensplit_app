@@ -149,6 +149,8 @@ class GoalsPage {
   const GoalsPage({
     required this.items,
     required this.total,
+    required this.page,
+    required this.pages,
     required this.totalSaved,
     required this.totalTarget,
     required this.completedCount,
@@ -157,10 +159,14 @@ class GoalsPage {
 
   final List<GoalModel> items;
   final int total;
+  final int page;
+  final int pages;
   final double totalSaved;
   final double totalTarget;
   final int completedCount;
   final int activeCount;
+
+  bool get hasMore => page < pages;
 
   factory GoalsPage.fromJson(Map<String, dynamic> j) {
     final data = j['data'] as Map<String, dynamic>;
@@ -173,6 +179,8 @@ class GoalsPage {
     return GoalsPage(
       items: items,
       total: (pagination['total'] as num?)?.toInt() ?? 0,
+      page: (pagination['page'] as num?)?.toInt() ?? 1,
+      pages: (pagination['pages'] as num?)?.toInt() ?? 1,
       totalSaved: (stats['totalSaved'] as num?)?.toDouble() ?? 0,
       totalTarget: (stats['totalTarget'] as num?)?.toDouble() ?? 0,
       completedCount: (stats['completedCount'] as num?)?.toInt() ?? 0,

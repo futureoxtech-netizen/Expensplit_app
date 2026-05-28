@@ -1,9 +1,13 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../app/router/app_router.dart';
 import '../../features/activity/providers/activity_providers.dart';
 import '../../features/expenses/providers/expense_providers.dart';
 import '../../features/groups/providers/group_providers.dart';
+import '../services/in_app_banner.dart';
 import 'socket_service.dart';
 
 /// Helpers that invalidate every parameterised provider for a family —
@@ -12,6 +16,7 @@ import 'socket_service.dart';
 void _invalidateFriendCaches(Ref ref) {
   ref.invalidate(friendsSummaryProvider);
   ref.invalidate(friendDetailProvider);
+  ref.invalidate(friendTransactionsPagedProvider);
 }
 
 /// Glue between the socket layer and Riverpod providers.
@@ -68,9 +73,11 @@ class RealtimeBridge {
       final groupId = _gid(data);
       if (groupId != null) {
         _ref.invalidate(groupExpensesProvider(groupId));
+        _ref.invalidate(groupExpensesPagedProvider(groupId));
         _ref.invalidate(groupBalancesProvider(groupId));
       }
       _ref.invalidate(expenseFeedProvider);
+      _ref.invalidate(expenseFeedPagedProvider);
       _ref.invalidate(activityFeedProvider);
       _ref.invalidate(monthlyAnalyticsProvider);
       // A new expense changes pairwise balances with every sharer, so
@@ -83,12 +90,14 @@ class RealtimeBridge {
       final expenseId = _eid(data);
       if (groupId != null) {
         _ref.invalidate(groupExpensesProvider(groupId));
+        _ref.invalidate(groupExpensesPagedProvider(groupId));
         _ref.invalidate(groupBalancesProvider(groupId));
       }
       if (expenseId != null) {
         _ref.invalidate(expenseDetailProvider(expenseId));
       }
       _ref.invalidate(expenseFeedProvider);
+      _ref.invalidate(expenseFeedPagedProvider);
       _ref.invalidate(activityFeedProvider);
       _ref.invalidate(monthlyAnalyticsProvider);
       _invalidateFriendCaches(_ref);
@@ -99,12 +108,14 @@ class RealtimeBridge {
       final expenseId = _eid(data);
       if (groupId != null) {
         _ref.invalidate(groupExpensesProvider(groupId));
+        _ref.invalidate(groupExpensesPagedProvider(groupId));
         _ref.invalidate(groupBalancesProvider(groupId));
       }
       if (expenseId != null) {
         _ref.invalidate(expenseDetailProvider(expenseId));
       }
       _ref.invalidate(expenseFeedProvider);
+      _ref.invalidate(expenseFeedPagedProvider);
       _ref.invalidate(activityFeedProvider);
       _ref.invalidate(monthlyAnalyticsProvider);
       _invalidateFriendCaches(_ref);
@@ -115,6 +126,7 @@ class RealtimeBridge {
       if (groupId != null) {
         _ref.invalidate(groupBalancesProvider(groupId));
         _ref.invalidate(groupExpensesProvider(groupId));
+        _ref.invalidate(groupExpensesPagedProvider(groupId));
       }
       _ref.invalidate(activityFeedProvider);
       // Settling up reduces the friend's net to/from us.
@@ -154,14 +166,22 @@ class RealtimeBridge {
           SocketService.instance.joinGroup(groupId);
         }
         _ref.invalidate(groupExpensesProvider(groupId));
+        _ref.invalidate(groupExpensesPagedProvider(groupId));
         _ref.invalidate(groupBalancesProvider(groupId));
       }
       if (expenseId != null) {
         _ref.invalidate(expenseDetailProvider(expenseId));
       }
+
+      // Surface a transient in-app banner so users see something happened
+      // even when the OS push is suppressed (the socket is live, so push
+      // is muted by [PushNotificationsService] to avoid double-notifying).
+      _showBanner(data);
+
       if (type == null) return;
       if (type.startsWith('expense.') || type.startsWith('settlement.')) {
         _ref.invalidate(expenseFeedProvider);
+        _ref.invalidate(expenseFeedPagedProvider);
         _ref.invalidate(activityFeedProvider);
         _ref.invalidate(monthlyAnalyticsProvider);
         _invalidateFriendCaches(_ref);
@@ -172,6 +192,59 @@ class RealtimeBridge {
         _invalidateFriendCaches(_ref);
       }
     });
+  }
+
+  /// Translate a `notification:new` payload into a banner. Tapping the
+  /// banner deep-links via the same `route` field the push handler uses.
+  void _showBanner(dynamic data) {
+    if (data is! Map) return;
+    final title = data['title']?.toString();
+    final message = data['message']?.toString();
+    if (title == null || message == null || title.isEmpty || message.isEmpty) {
+      return;
+    }
+    final type = data['type']?.toString() ?? '';
+    final inner = data['data'] is Map ? data['data'] as Map : const {};
+    final groupId = inner['groupId']?.toString();
+    final expenseId = inner['expenseId']?.toString();
+    final route = inner['route']?.toString() ??
+        (expenseId != null
+            ? '/expenses/$expenseId'
+            : (groupId != null ? '/groups/$groupId' : null));
+
+    IconData icon;
+    Color accent;
+    if (type.startsWith('settlement.')) {
+      icon = Icons.payments_rounded;
+      accent = const Color(0xFF00B894);
+    } else if (type.startsWith('expense.')) {
+      icon = Icons.receipt_long_rounded;
+      accent = const Color(0xFF6C5CE7);
+    } else if (type.startsWith('group.')) {
+      icon = Icons.group_rounded;
+      accent = const Color(0xFF0984E3);
+    } else {
+      icon = Icons.notifications_active_rounded;
+      accent = const Color(0xFF6C5CE7);
+    }
+
+    InAppBanner.instance.show(
+      title: title,
+      message: message,
+      icon: icon,
+      accent: accent,
+      onTap: route == null
+          ? null
+          : () {
+              final ctx = rootNavigatorKey.currentContext;
+              if (ctx == null) return;
+              try {
+                GoRouter.of(ctx).go(route);
+              } catch (_) {
+                /* router not ready */
+              }
+            },
+    );
   }
 
   String? _gid(dynamic data) {

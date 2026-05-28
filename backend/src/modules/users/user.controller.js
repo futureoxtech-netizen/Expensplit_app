@@ -272,7 +272,31 @@ export const userController = {
       (a, b) => new Date(b.date) - new Date(a.date),
     );
 
-    res.json({ ok: true, data: { transactions: all, groups: [...groupMap.values()].map(g => ({ id: g._id.toString(), name: g.name, coverColor: g.coverColor })) } });
+    // Paginate the merged stream in memory — the underlying expense /
+    // settlement queries don't share a unified index so we can't paginate
+    // them in the DB without overfetching. This caps the payload size for
+    // power users without changing the existing response shape.
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 30));
+    const skip = (page - 1) * limit;
+    const slice = all.slice(skip, skip + limit);
+    const hasMore = skip + slice.length < all.length;
+
+    res.json({
+      ok: true,
+      data: {
+        transactions: slice,
+        total: all.length,
+        page,
+        limit,
+        hasMore,
+        groups: [...groupMap.values()].map((g) => ({
+          id: g._id.toString(),
+          name: g.name,
+          coverColor: g.coverColor,
+        })),
+      },
+    });
   }),
 
   // ── Delete account ────────────────────────────────────────────────────────

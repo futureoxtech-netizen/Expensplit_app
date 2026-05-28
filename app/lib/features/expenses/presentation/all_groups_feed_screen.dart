@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/error_messages.dart';
+import '../../../core/pagination/paged_sliver_list.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../shared/widgets/category_icon.dart';
 import '../../../shared/widgets/empty_state.dart';
@@ -23,6 +24,8 @@ class AllGroupsFeedScreen extends ConsumerStatefulWidget {
 
 class _AllGroupsFeedScreenState extends ConsumerState<AllGroupsFeedScreen> {
   String _selectedCategory = 'all';
+  final _scrollCtrl = ScrollController();
+  PaginatedScrollListener? _scrollListener;
 
   static const _categories = [
     'all',
@@ -40,17 +43,52 @@ class _AllGroupsFeedScreenState extends ConsumerState<AllGroupsFeedScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _scrollListener = PaginatedScrollListener(
+      controller: _scrollCtrl,
+      onLoadMore: () =>
+          ref.read(expenseFeedPagedProvider.notifier).loadMore(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _scrollListener?.dispose();
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final feedAsync = ref.watch(expenseFeedProvider);
+    final state = ref.watch(expenseFeedPagedProvider);
+    final notifier = ref.read(expenseFeedPagedProvider.notifier);
     final user = ref.watch(authProvider).user;
     final currency = user?.currency ?? 'USD';
     final userId = user?.id ?? '';
 
+    // Filter is applied client-side over whatever we've loaded so far.
+    // Server-side category filtering for the global feed would be a backend
+    // change; for now scrolling continues to surface more matches as new
+    // pages arrive.
+    final loaded = state.items ?? const <ExpenseModel>[];
+    final filtered = _selectedCategory == 'all'
+        ? loaded
+        : loaded.where((e) => e.category == _selectedCategory).toList();
+    final myTotal = filtered.fold<double>(0, (acc, e) {
+      return acc +
+          e.shares
+              .where((s) => s.user.id == userId)
+              .fold<double>(0, (a, s) => a + s.amount);
+    });
+
     return GradientScaffold(
       padding: EdgeInsets.zero,
       child: RefreshIndicator(
-        onRefresh: () async => ref.invalidate(expenseFeedProvider),
+        onRefresh: notifier.refresh,
         child: CustomScrollView(
+          controller: _scrollCtrl,
+          physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
             SliverAppBar(
               pinned: true,
@@ -61,66 +99,57 @@ class _AllGroupsFeedScreenState extends ConsumerState<AllGroupsFeedScreen> {
                 preferredSize: const Size.fromHeight(48),
                 child: _CategoryChips(
                   selected: _selectedCategory,
-                  onChanged: (c) =>
-                      setState(() => _selectedCategory = c),
+                  onChanged: (c) => setState(() => _selectedCategory = c),
                 ),
               ),
             ),
-            feedAsync.when(
-              loading: () => const SliverFillRemaining(
-                child: ShimmerLoader(),
+            // Header — only shown once items are loaded.
+            if (state.items != null && filtered.isNotEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                  child: _SummaryCard(
+                    total: myTotal,
+                    count: filtered.length,
+                    currency: currency,
+                  ),
+                ),
               ),
-              error: (e, _) => SliverFillRemaining(
-                child: Center(child: Text(friendlyError(e))),
+            PagedSliverList<ExpenseModel>(
+              state: state,
+              onLoadFirst: notifier.loadFirst,
+              onRetryMore: notifier.loadMore,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+              firstPageBuilder: (ctx, s) => s.error != null
+                  ? Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Center(child: Text(friendlyError(s.error))),
+                    )
+                  : const ShimmerLoader(),
+              emptyBuilder: (ctx) => const SizedBox(
+                height: 320,
+                child: EmptyState(
+                  icon: Icons.receipt_long_outlined,
+                  title: 'No expenses',
+                  subtitle: 'Add an expense in any group to see it here.',
+                ),
               ),
-              data: (page) {
-                final filtered = _selectedCategory == 'all'
-                    ? page.items
-                    : page.items
-                        .where((e) => e.category == _selectedCategory)
-                        .toList();
-
-                if (filtered.isEmpty) {
-                  return const SliverFillRemaining(
-                    child: EmptyState(
-                      icon: Icons.receipt_long_outlined,
-                      title: 'No expenses',
-                      subtitle:
-                          'No expenses found for this category.',
-                    ),
-                  );
+              // The filter is applied above, but PagedSliverList renders
+              // `state.items` directly. To honor the filter we provide a
+              // custom builder that skips non-matching items by returning
+              // an empty widget. Items still load in chunks; matching ones
+              // accumulate as the user scrolls.
+              itemBuilder: (ctx, e, _) {
+                if (_selectedCategory != 'all' &&
+                    e.category != _selectedCategory) {
+                  return const SizedBox.shrink();
                 }
-
-                // Compute my total share for filtered expenses
-                final myTotal = filtered.fold<double>(0, (acc, e) {
-                  return acc +
-                      e.shares
-                          .where((s) => s.user.id == userId)
-                          .fold<double>(0, (a, s) => a + s.amount);
-                });
-
-                return SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-                  sliver: SliverList(
-                    delegate: SliverChildListDelegate([
-                      const SizedBox(height: 12),
-                      // Summary hero card
-                      _SummaryCard(
-                        total: myTotal,
-                        count: filtered.length,
-                        currency: currency,
-                      ),
-                      const SizedBox(height: 16),
-                      for (final expense in filtered)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: _ExpenseTile(
-                            expense: expense,
-                            userId: userId,
-                            currency: currency,
-                          ),
-                        ),
-                    ]),
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _ExpenseTile(
+                    expense: e,
+                    userId: userId,
+                    currency: currency,
                   ),
                 );
               },

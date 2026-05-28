@@ -1,4 +1,5 @@
 import '../../../core/network/dio_client.dart';
+import '../../../core/pagination/paged_list_notifier.dart';
 import 'expense_model.dart';
 
 class ExpenseRepository {
@@ -42,6 +43,25 @@ class ExpenseRepository {
       query: {'page': page, 'limit': limit},
     );
     return ExpensePage.fromJson(res['data'] as Map<String, dynamic>);
+  }
+
+  /// Bridge from [ExpensePage] to the generic [PagedResult] used by the
+  /// shared list-notifier pattern.
+  Future<PagedResult<ExpenseModel>> listByGroupPaged(
+    String groupId, {
+    int page = 1,
+    int limit = 30,
+  }) async {
+    final p = await listByGroup(groupId, page: page, limit: limit);
+    return PagedResult(items: p.items, hasMore: p.hasMore);
+  }
+
+  Future<PagedResult<ExpenseModel>> feedPaged({
+    int page = 1,
+    int limit = 30,
+  }) async {
+    final p = await feed(page: page, limit: limit);
+    return PagedResult(items: p.items, hasMore: p.hasMore);
   }
 
   Future<ExpenseModel> getById(String id) async {

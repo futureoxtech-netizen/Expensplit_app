@@ -33,10 +33,16 @@ import '../../features/auth/presentation/reset_password_screen.dart';
 import '../../features/goals/presentation/goals_screen.dart';
 import '../../features/goals/presentation/goal_detail_screen.dart';
 
+/// Shared by GoRouter and any service that needs a root overlay or navigator
+/// outside the widget tree (e.g. [InAppBanner]). Don't pass new instances to
+/// GoRouter — keep this one stable for the app lifetime.
+final rootNavigatorKey = GlobalKey<NavigatorState>();
+
 final appRouterProvider = Provider<GoRouter>((ref) {
   final notifier = _AuthRefresh(ref);
 
   return GoRouter(
+    navigatorKey: rootNavigatorKey,
     initialLocation: '/splash',
     debugLogDiagnostics: false,
     refreshListenable: notifier,

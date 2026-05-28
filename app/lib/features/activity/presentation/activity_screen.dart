@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/errors/error_messages.dart';
+import '../../../core/pagination/paged_sliver_list.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../shared/widgets/avatar.dart';
 import '../../../shared/widgets/empty_state.dart';
@@ -21,56 +22,80 @@ class ActivityScreen extends ConsumerStatefulWidget {
 }
 
 class _ActivityScreenState extends ConsumerState<ActivityScreen> {
+  final _scrollCtrl = ScrollController();
+  PaginatedScrollListener? _scrollListener;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(unreadActivityProvider.notifier).markAllRead();
     });
+    _scrollListener = PaginatedScrollListener(
+      controller: _scrollCtrl,
+      onLoadMore: () =>
+          ref.read(activityFeedProvider.notifier).loadMore(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _scrollListener?.dispose();
+    _scrollCtrl.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final async = ref.watch(activityFeedProvider);
+    final state = ref.watch(activityFeedProvider);
+    final notifier = ref.read(activityFeedProvider.notifier);
     final meId = ref.watch(authProvider).user?.id;
+
     return GradientScaffold(
       padding: EdgeInsets.zero,
       child: RefreshIndicator(
-        onRefresh: () async => ref.invalidate(activityFeedProvider),
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
-          children: [
-            const Text('Activity',
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 14),
-            async.when(
-              loading: () => const ShimmerLoader(height: 72),
-              error: (e, _) => Text(friendlyError(e)),
-              data: (items) {
-                if (items.isEmpty) {
-                  return const EmptyState(
-                    icon: Icons.history_toggle_off_rounded,
-                    title: 'Nothing yet',
-                    subtitle: 'When friends add expenses or settle up, it appears here.',
-                  );
-                }
-                return Column(
-                  children: [
-                    for (final a in items)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: _ActivityTile(item: a, meId: meId),
-                      ),
-                  ],
-                );
-              },
+        onRefresh: notifier.refresh,
+        child: CustomScrollView(
+          controller: _scrollCtrl,
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            const SliverPadding(
+              padding: EdgeInsets.fromLTRB(20, 16, 20, 14),
+              sliver: SliverToBoxAdapter(
+                child: Text(
+                  'Activity',
+                  style: TextStyle(
+                      fontSize: 28, fontWeight: FontWeight.w800),
+                ),
+              ),
+            ),
+            PagedSliverList<ActivityItem>(
+              state: state,
+              onLoadFirst: notifier.loadFirst,
+              onRetryMore: notifier.loadMore,
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+              firstPageBuilder: (ctx, s) => s.error != null
+                  ? Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      child: Text(friendlyError(s.error)),
+                    )
+                  : const ShimmerLoader(height: 72),
+              emptyBuilder: (ctx) => const EmptyState(
+                icon: Icons.history_toggle_off_rounded,
+                title: 'Nothing yet',
+                subtitle:
+                    'When friends add expenses or settle up, it appears here.',
+              ),
+              itemBuilder: (ctx, item, _) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _ActivityTile(item: item, meId: meId),
+              ),
             ),
           ],
         ),
       ),
     );
   }
-
 }
 
 class _ActivityTile extends StatelessWidget {

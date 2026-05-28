@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/app_colors.dart';
+import '../../../core/errors/error_messages.dart';
+import '../../../core/pagination/paged_sliver_list.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../shared/widgets/empty_state.dart';
+import '../../../shared/widgets/error_view.dart';
 import '../../../shared/widgets/shimmer_loader.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../data/personal_expense_model.dart';
@@ -62,6 +65,41 @@ class _PersonalTrackerScreenState
   _Mode _mode = _Mode.daily;
   DateTime _anchor = DateTime.now();
   DateTimeRange? _customRange;
+  final _scrollCtrl = ScrollController();
+  PaginatedScrollListener? _scrollListener;
+  (DateTime, DateTime)? _lastRangeKey;
+
+  @override
+  void dispose() {
+    _scrollListener?.dispose();
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  void _ensureScrollListener((DateTime, DateTime) range) {
+    if (_lastRangeKey == range) return;
+    _lastRangeKey = range;
+    _scrollListener?.dispose();
+    _scrollListener = PaginatedScrollListener(
+      controller: _scrollCtrl,
+      onLoadMore: () =>
+          ref.read(personalExpensesPagedProvider(range).notifier).loadMore(),
+    );
+  }
+
+  String _periodKey(PersonalExpenseModel e) {
+    switch (_mode) {
+      case _Mode.daily:
+        return 'all';
+      case _Mode.weekly:
+        return '${_dayName(e.date.weekday)}, ${e.date.day} ${_monthShort(e.date.month)}';
+      case _Mode.monthly:
+        final wk = ((e.date.day - 1) ~/ 7) + 1;
+        return 'Week $wk';
+      case _Mode.custom:
+        return '${e.date.day} ${_monthShort(e.date.month)}';
+    }
+  }
 
   DateTimeRange get _range {
     if (_mode == _Mode.daily) {
@@ -155,12 +193,24 @@ class _PersonalTrackerScreenState
     final user = ref.watch(authProvider).user;
     final currency = user?.currency ?? 'USD';
     final r = _range;
-    final async = ref.watch(personalExpenseListProvider((r.start, r.end)));
+    final rangeKey = (r.start, r.end);
+    _ensureScrollListener(rangeKey);
+    final pagedState = ref.watch(personalExpensesPagedProvider(rangeKey));
+    final pagedNotifier =
+        ref.read(personalExpensesPagedProvider(rangeKey).notifier);
     final theme = Theme.of(context);
+    final loadedItems = pagedState.items ?? const <PersonalExpenseModel>[];
+    final loadedTotal = loadedItems.fold<double>(0, (a, e) => a + e.amount);
+    final byCategory = <String, double>{};
+    for (final e in loadedItems) {
+      byCategory[e.category] = (byCategory[e.category] ?? 0) + e.amount;
+    }
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       body: CustomScrollView(
+        controller: _scrollCtrl,
+        physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           SliverAppBar(
             pinned: true,
@@ -282,90 +332,96 @@ class _PersonalTrackerScreenState
             ),
           ),
 
-          async.when(
-            loading: () => const SliverFillRemaining(child: ShimmerLoader()),
-            error: (e, _) => SliverFillRemaining(
-              child: Center(child: Text(e.toString())),
-            ),
-            data: (items) {
-              final total = items.fold<double>(0, (a, e) => a + e.amount);
-              final byCategory = <String, double>{};
-              for (final e in items) {
-                byCategory[e.category] =
-                    (byCategory[e.category] ?? 0) + e.amount;
-              }
-
-              if (items.isEmpty) {
-                return SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 80),
-                  sliver: SliverList(
-                    delegate: SliverChildListDelegate([
-                      _TotalCard(total: total, currency: currency),
-                      const SizedBox(height: 24),
-                      const EmptyState(
-                        icon: Icons.wallet_outlined,
-                        title: 'No expenses',
-                        subtitle: 'Tap + to add your first expense.',
-                      ),
-                    ]),
-                  ),
-                );
-              }
-
-              // Group expenses by period
-              final grouped = <String, List<PersonalExpenseModel>>{};
-              for (final e in items) {
-                String key;
-                if (_mode == _Mode.daily) {
-                  key = 'all';
-                } else if (_mode == _Mode.weekly) {
-                  key = '${_dayName(e.date.weekday)}, ${e.date.day} ${_monthShort(e.date.month)}';
-                } else if (_mode == _Mode.monthly) {
-                  final wk = ((e.date.day - 1) ~/ 7) + 1;
-                  key = 'Week $wk';
-                } else {
-                  key = '${e.date.day} ${_monthShort(e.date.month)}';
-                }
-                grouped.putIfAbsent(key, () => []).add(e);
-              }
-
-              return SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-                sliver: SliverList(
-                  delegate: SliverChildListDelegate([
-                    _TotalCard(total: total, currency: currency),
+          // Header (total + category bar) — derived from items loaded so
+          // far. While more pages remain, the figures reflect the loaded
+          // portion; the spinner footer + "loaded N of M" feel makes the
+          // partial state self-evident.
+          if (pagedState.items != null && loadedItems.isNotEmpty)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _TotalCard(total: loadedTotal, currency: currency),
                     const SizedBox(height: 16),
                     if (byCategory.isNotEmpty)
                       _CategoryBar(
-                          byCategory: byCategory,
-                          total: total,
-                          currency: currency),
+                        byCategory: byCategory,
+                        total: loadedTotal,
+                        currency: currency,
+                      ),
                     const SizedBox(height: 20),
-                    for (final entry in grouped.entries) ...[
-                      if (_mode != _Mode.daily) ...[
-                        Text(entry.key,
-                            style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13,
-                                color: theme.colorScheme.onSurface
-                                    .withOpacity(0.5))),
-                        const SizedBox(height: 8),
-                      ],
-                      for (final e in entry.value)
-                        _ExpenseRow(
-                          expense: e,
-                          currency: currency,
-                          onDelete: () async {
-                            await ref
-                                .read(personalExpenseRepositoryProvider)
-                                .delete(e.id);
-                            ref.invalidate(personalExpenseListProvider);
-                          },
-                        ),
-                      const SizedBox(height: 12),
-                    ],
-                  ]),
+                  ],
                 ),
+              ),
+            ),
+          PagedSliverList<PersonalExpenseModel>(
+            state: pagedState,
+            onLoadFirst: pagedNotifier.loadFirst,
+            onRetryMore: pagedNotifier.loadMore,
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+            firstPageBuilder: (ctx, s) => s.error != null
+                ? ErrorView(
+                    error: s.error,
+                    onRetry: pagedNotifier.loadFirst,
+                  )
+                : const ShimmerLoader(),
+            emptyBuilder: (ctx) => Padding(
+              padding: const EdgeInsets.fromLTRB(0, 24, 0, 80),
+              child: Column(
+                children: [
+                  _TotalCard(total: 0, currency: currency),
+                  const SizedBox(height: 24),
+                  const EmptyState(
+                    icon: Icons.wallet_outlined,
+                    title: 'No expenses',
+                    subtitle: 'Tap + to add your first expense.',
+                  ),
+                ],
+              ),
+            ),
+            itemBuilder: (ctx, e, i) {
+              // Inline period header when the grouping key changes. Avoids
+              // the up-front "group everything" pass that doesn't compose
+              // with paged delivery.
+              final prev = i > 0 ? loadedItems[i - 1] : null;
+              final headerLabel = _periodKey(e);
+              final prevHeader = prev != null ? _periodKey(prev) : null;
+              final showHeader =
+                  _mode != _Mode.daily && headerLabel != prevHeader;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (showHeader) ...[
+                    Padding(
+                      padding: EdgeInsets.only(top: i == 0 ? 0 : 8),
+                      child: Text(
+                        headerLabel,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                          color:
+                              theme.colorScheme.onSurface.withOpacity(0.5),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  _ExpenseRow(
+                    expense: e,
+                    currency: currency,
+                    onDelete: () async {
+                      await ref
+                          .read(personalExpenseRepositoryProvider)
+                          .delete(e.id);
+                      await pagedNotifier.refresh();
+                      ref.invalidate(personalExpenseListProvider);
+                    },
+                    onTap: () => _showRowActions(context, currency, e),
+                  ),
+                  const SizedBox(height: 12),
+                ],
               );
             },
           ),
@@ -379,7 +435,9 @@ class _PersonalTrackerScreenState
     );
   }
 
-  void _showAddSheet(BuildContext context, String currency) {
+  void _showAddSheet(BuildContext context, String currency,
+      {PersonalExpenseModel? existing}) {
+    final r = _range;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -389,8 +447,140 @@ class _PersonalTrackerScreenState
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => _AddExpenseSheet(
         currency: currency,
-        onSaved: () => ref.invalidate(personalExpenseListProvider),
+        existing: existing,
+        onSaved: () {
+          ref.invalidate(personalExpenseListProvider);
+          // Refresh the visible paged list so the new/edited record shows
+          // immediately (the legacy provider is only consumed by reports).
+          ref
+              .read(personalExpensesPagedProvider((r.start, r.end)).notifier)
+              .refresh();
+        },
         ref: ref,
+      ),
+    );
+  }
+
+  /// Bottom sheet shown when a row is tapped — gives the user a discoverable
+  /// way to edit or delete (swipe-to-delete alone was not obvious enough).
+  void _showRowActions(
+    BuildContext context,
+    String currency,
+    PersonalExpenseModel e,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(top: 10, bottom: 12),
+              decoration: BoxDecoration(
+                color: Theme.of(sheetCtx).dividerColor,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: _categoryColor(e.category).withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      _categoryIcon(e.category),
+                      size: 20,
+                      color: _categoryColor(e.category),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          e.description,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                          ),
+                        ),
+                        Text(
+                          Money.format(e.amount, code: currency),
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Theme.of(sheetCtx)
+                                .colorScheme
+                                .onSurface
+                                .withOpacity(0.6),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 4),
+            ListTile(
+              leading: const Icon(Icons.edit_rounded, color: AppColors.primary),
+              title: const Text('Edit'),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                _showAddSheet(context, currency, existing: e);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline_rounded,
+                  color: AppColors.danger),
+              title: const Text('Delete',
+                  style: TextStyle(color: AppColors.danger)),
+              onTap: () async {
+                Navigator.pop(sheetCtx);
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    title: const Text('Delete expense?'),
+                    content: Text('Remove "${e.description}"?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Cancel'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text(
+                          'Delete',
+                          style: TextStyle(color: AppColors.danger),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed == true) {
+                  await ref
+                      .read(personalExpenseRepositoryProvider)
+                      .delete(e.id);
+                  ref.invalidate(personalExpenseListProvider);
+                }
+              },
+            ),
+            const SizedBox(height: 4),
+          ],
+        ),
       ),
     );
   }
@@ -571,10 +761,12 @@ class _ExpenseRow extends StatelessWidget {
     required this.expense,
     required this.currency,
     required this.onDelete,
+    required this.onTap,
   });
   final PersonalExpenseModel expense;
   final String currency;
   final VoidCallback onDelete;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -612,38 +804,46 @@ class _ExpenseRow extends StatelessWidget {
       onDismissed: (_) => onDelete(),
       child: Padding(
         padding: const EdgeInsets.only(bottom: 8),
-        child: Row(
-          children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: _categoryColor(expense.category).withOpacity(0.12),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(_categoryIcon(expense.category),
-                  size: 20, color: _categoryColor(expense.category)),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: _categoryColor(expense.category).withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(_categoryIcon(expense.category),
+                      size: 20, color: _categoryColor(expense.category)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(expense.description,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 14)),
+                      Text(
+                          expense.category[0].toUpperCase() +
+                              expense.category.substring(1),
+                          style:
+                              const TextStyle(fontSize: 12, color: Colors.grey)),
+                    ],
+                  ),
+                ),
+                Text(Money.format(expense.amount, code: currency),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 14)),
+              ],
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(expense.description,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w600, fontSize: 14)),
-                  Text(
-                      expense.category[0].toUpperCase() +
-                          expense.category.substring(1),
-                      style:
-                          const TextStyle(fontSize: 12, color: Colors.grey)),
-                ],
-              ),
-            ),
-            Text(Money.format(expense.amount, code: currency),
-                style: const TextStyle(
-                    fontWeight: FontWeight.w700, fontSize: 14)),
-          ],
+          ),
         ),
       ),
     );
@@ -657,21 +857,36 @@ class _AddExpenseSheet extends StatefulWidget {
     required this.currency,
     required this.onSaved,
     required this.ref,
+    this.existing,
   });
   final String currency;
   final VoidCallback onSaved;
   final WidgetRef ref;
+  final PersonalExpenseModel? existing;
 
   @override
   State<_AddExpenseSheet> createState() => _AddExpenseSheetState();
 }
 
 class _AddExpenseSheetState extends State<_AddExpenseSheet> {
-  final _descCtrl = TextEditingController();
-  final _amtCtrl = TextEditingController();
-  String _category = 'food';
-  DateTime _date = DateTime.now();
+  late final TextEditingController _descCtrl;
+  late final TextEditingController _amtCtrl;
+  late String _category;
+  late DateTime _date;
   bool _saving = false;
+
+  bool get _isEdit => widget.existing != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.existing;
+    _descCtrl = TextEditingController(text: e?.description ?? '');
+    _amtCtrl = TextEditingController(
+        text: e != null ? e.amount.toStringAsFixed(2) : '');
+    _category = e?.category ?? 'food';
+    _date = e?.date ?? DateTime.now();
+  }
 
   @override
   void dispose() {
@@ -695,9 +910,9 @@ class _AddExpenseSheetState extends State<_AddExpenseSheet> {
         children: [
           Row(
             children: [
-              const Text('Add Expense',
-                  style:
-                      TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+              Text(_isEdit ? 'Edit Expense' : 'Add Expense',
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w800)),
               const Spacer(),
               IconButton(
                   icon: const Icon(Icons.close),
@@ -804,8 +1019,8 @@ class _AddExpenseSheetState extends State<_AddExpenseSheet> {
                       height: 20,
                       child: CircularProgressIndicator(
                           color: Colors.white, strokeWidth: 2))
-                  : const Text('Save',
-                      style: TextStyle(fontWeight: FontWeight.w700)),
+                  : Text(_isEdit ? 'Save changes' : 'Save',
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
             ),
           ),
           const SizedBox(height: 20),
@@ -825,20 +1040,33 @@ class _AddExpenseSheetState extends State<_AddExpenseSheet> {
     }
     setState(() => _saving = true);
     try {
-      await widget.ref.read(personalExpenseRepositoryProvider).create(
-            description: desc,
-            amount: amt,
-            currency: widget.currency,
-            category: _category,
-            date: _date,
-          );
+      final repo = widget.ref.read(personalExpenseRepositoryProvider);
+      if (_isEdit) {
+        await repo.update(
+          widget.existing!.id,
+          description: desc,
+          amount: amt,
+          currency: widget.currency,
+          category: _category,
+          date: _date,
+        );
+      } else {
+        await repo.create(
+          description: desc,
+          amount: amt,
+          currency: widget.currency,
+          category: _category,
+          date: _date,
+        );
+      }
       widget.onSaved();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Row(children: [
-            Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
-            SizedBox(width: 10),
-            Text('Expense recorded!'),
+          content: Row(children: [
+            const Icon(Icons.check_circle_rounded,
+                color: Colors.white, size: 18),
+            const SizedBox(width: 10),
+            Text(_isEdit ? 'Changes saved!' : 'Expense recorded!'),
           ]),
           backgroundColor: Colors.green.shade600,
           behavior: SnackBarBehavior.floating,
@@ -847,10 +1075,7 @@ class _AddExpenseSheetState extends State<_AddExpenseSheet> {
         Navigator.pop(context);
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
-      }
+      if (mounted) showErrorSnack(context, e);
     } finally {
       if (mounted) setState(() => _saving = false);
     }

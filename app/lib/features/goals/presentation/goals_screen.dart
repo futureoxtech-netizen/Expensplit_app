@@ -4,9 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_colors.dart';
+import '../../../core/errors/error_messages.dart';
+import '../../../core/pagination/paged_sliver_list.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../shared/widgets/empty_state.dart';
+import '../../../shared/widgets/error_view.dart';
 import '../../../shared/widgets/shimmer_loader.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../data/goal_model.dart';
 import '../providers/goals_provider.dart';
 
@@ -19,11 +23,51 @@ class GoalsScreen extends ConsumerStatefulWidget {
 
 class _GoalsScreenState extends ConsumerState<GoalsScreen> {
   String? _statusFilter; // null = all
+  final _scrollCtrl = ScrollController();
+  PaginatedScrollListener? _scrollListener;
+  String? _lastFilter;
+
+  @override
+  void initState() {
+    super.initState();
+    _attachScrollListener();
+  }
+
+  void _attachScrollListener() {
+    _scrollListener?.dispose();
+    _scrollListener = PaginatedScrollListener(
+      controller: _scrollCtrl,
+      onLoadMore: () => ref
+          .read(goalsListPagedProvider(_statusFilter).notifier)
+          .loadMore(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _scrollListener?.dispose();
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _refreshAll() async {
+    ref.invalidate(goalsListProvider(_statusFilter));
+    await ref.read(goalsListPagedProvider(_statusFilter).notifier).refresh();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final async = ref.watch(goalsListProvider(_statusFilter));
-    final theme = Theme.of(context);
+    // Re-bind the scroll listener whenever the filter changes — the family
+    // notifier instance is keyed on `_statusFilter`.
+    if (_lastFilter != _statusFilter) {
+      _lastFilter = _statusFilter;
+      _attachScrollListener();
+    }
+
+    final headerAsync = ref.watch(goalsListProvider(_statusFilter));
+    final pagedState = ref.watch(goalsListPagedProvider(_statusFilter));
+    final pagedNotifier =
+        ref.read(goalsListPagedProvider(_statusFilter).notifier);
 
     return Scaffold(
       appBar: AppBar(
@@ -37,59 +81,65 @@ class _GoalsScreenState extends ConsumerState<GoalsScreen> {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: () async => ref.invalidate(goalsListProvider(_statusFilter)),
-        child: async.when(
-          loading: () => const Padding(
-            padding: EdgeInsets.all(16),
-            child: ShimmerLoader(),
-          ),
-          error: (e, _) => ListView(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text('Error: $e', style: TextStyle(color: AppColors.danger)),
-              )
-            ],
-          ),
-          data: (page) => CustomScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            slivers: [
-              if (page.items.isNotEmpty) ...[
-                SliverToBoxAdapter(
-                  child: _StatsHeader(page: page),
+        onRefresh: _refreshAll,
+        child: CustomScrollView(
+          controller: _scrollCtrl,
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            // Stats header — comes from the legacy single-page provider so
+            // we get accurate totals even before any list page loads.
+            SliverToBoxAdapter(
+              child: headerAsync.when(
+                loading: () => const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: ShimmerLoader(height: 120, count: 1),
                 ),
-                SliverToBoxAdapter(
-                  child: _FilterChips(
-                    selected: _statusFilter,
-                    onChanged: (s) => setState(() => _statusFilter = s),
-                  ),
+                error: (e, _) => ErrorView(
+                  error: e,
+                  compact: true,
+                  onRetry: () => ref.invalidate(goalsListProvider(_statusFilter)),
                 ),
-              ],
-              if (page.items.isEmpty)
-                const SliverFillRemaining(
-                  child: EmptyState(
-                    icon: Icons.flag_rounded,
-                    title: 'No goals yet',
-                    subtitle: 'Tap + to set your first savings goal.',
-                  ),
-                )
-              else
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
-                  sliver: SliverList.separated(
-                    itemCount: page.items.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemBuilder: (_, i) => _GoalCard(
-                      goal: page.items[i],
-                      onTap: () async {
-                        await context.push('/goals/${page.items[i].id}');
-                        ref.invalidate(goalsListProvider(_statusFilter));
-                      },
-                    ),
-                  ),
+                data: (page) =>
+                    page.items.isEmpty ? const SizedBox.shrink() : _StatsHeader(page: page),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: _FilterChips(
+                selected: _statusFilter,
+                onChanged: (s) => setState(() => _statusFilter = s),
+              ),
+            ),
+            PagedSliverList<GoalModel>(
+              state: pagedState,
+              onLoadFirst: pagedNotifier.loadFirst,
+              onRetryMore: pagedNotifier.loadMore,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
+              firstPageBuilder: (ctx, s) => s.error != null
+                  ? ErrorView(
+                      error: s.error,
+                      onRetry: pagedNotifier.loadFirst,
+                    )
+                  : const ShimmerLoader(),
+              emptyBuilder: (ctx) => const Padding(
+                padding: EdgeInsets.only(top: 60),
+                child: EmptyState(
+                  icon: Icons.flag_rounded,
+                  title: 'No goals yet',
+                  subtitle: 'Tap + to set your first savings goal.',
                 ),
-            ],
-          ),
+              ),
+              separator: const SizedBox(height: 12),
+              itemBuilder: (ctx, goal, _) => _GoalCard(
+                goal: goal,
+                onTap: () {
+                  () async {
+                    await context.push('/goals/${goal.id}');
+                    await _refreshAll();
+                  }();
+                },
+              ),
+            ),
+          ],
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -113,7 +163,9 @@ class _GoalsScreenState extends ConsumerState<GoalsScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (_) => CreateGoalSheet(
-        onCreated: () => ref.invalidate(goalsListProvider(_statusFilter)),
+        onCreated: () {
+          _refreshAll();
+        },
       ),
     );
   }
@@ -493,6 +545,11 @@ class _CreateGoalSheetState extends ConsumerState<CreateGoalSheet> {
     try {
       final repo = ref.read(goalsRepositoryProvider);
       final amount = double.parse(_amountCtrl.text.replaceAll(',', ''));
+      // Use the existing goal's currency on edit; on create, default to the
+      // user's profile currency so new goals match every other amount the
+      // user sees in the app.
+      final userCurrency = ref.read(authProvider).user?.currency ?? 'USD';
+      final currency = widget.existing?.currency ?? userCurrency;
       if (widget.existing == null) {
         await repo.create(
           title: _titleCtrl.text.trim(),
@@ -500,6 +557,7 @@ class _CreateGoalSheetState extends ConsumerState<CreateGoalSheet> {
           emoji: _emoji,
           category: _category,
           targetAmount: amount,
+          currency: currency,
           targetDate: _targetDate,
           priority: _priority,
           color: _color,
@@ -513,6 +571,7 @@ class _CreateGoalSheetState extends ConsumerState<CreateGoalSheet> {
           emoji: _emoji,
           category: _category,
           targetAmount: amount,
+          currency: currency,
           targetDate: _targetDate,
           clearTargetDate: _targetDate == null,
           priority: _priority,
@@ -523,11 +582,7 @@ class _CreateGoalSheetState extends ConsumerState<CreateGoalSheet> {
       widget.onCreated();
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger),
-        );
-      }
+      if (mounted) showErrorSnack(context, e);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -537,6 +592,9 @@ class _CreateGoalSheetState extends ConsumerState<CreateGoalSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isEdit = widget.existing != null;
+    final currencyCode =
+        widget.existing?.currency ?? ref.watch(authProvider).user?.currency ?? 'USD';
+    final currencySymbol = Money.symbolOf(currencyCode);
 
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
@@ -617,10 +675,21 @@ class _CreateGoalSheetState extends ConsumerState<CreateGoalSheet> {
               // Target amount
               TextFormField(
                 controller: _amountCtrl,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Target amount *',
                   hintText: '0.00',
-                  prefixIcon: Icon(Icons.attach_money_rounded),
+                  prefixIcon: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Text(
+                      currencySymbol,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: theme.colorScheme.onSurface.withOpacity(0.7),
+                      ),
+                    ),
+                  ),
+                  prefixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 20),
                 ),
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 inputFormatters: [

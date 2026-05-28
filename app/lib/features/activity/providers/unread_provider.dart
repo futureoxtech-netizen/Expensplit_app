@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive/hive.dart';
 
 import '../../../core/storage/hive_setup.dart';
+import '../data/activity_repository.dart';
 import 'activity_providers.dart';
 
 const _kLastSeenKey = 'activity_last_seen_at';
@@ -21,16 +22,17 @@ Future<void> _writeLastSeen(DateTime when) async {
 class UnreadActivityNotifier extends StateNotifier<int> {
   UnreadActivityNotifier(this._ref) : super(0) {
     _ref.listen(activityFeedProvider, (_, next) {
-      next.whenData(_recompute);
+      final items = next.items;
+      if (items != null) _recompute(items);
     });
     // Initial compute when feed already has data.
-    final feed = _ref.read(activityFeedProvider);
-    feed.whenData(_recompute);
+    final items = _ref.read(activityFeedProvider).items;
+    if (items != null) _recompute(items);
   }
 
   final Ref _ref;
 
-  void _recompute(List items) {
+  void _recompute(List<ActivityItem> items) {
     final lastSeen = _readLastSeen();
     var count = 0;
     for (final a in items) {

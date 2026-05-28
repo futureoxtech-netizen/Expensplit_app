@@ -4,7 +4,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/app_colors.dart';
+import '../../../core/errors/error_messages.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../shared/widgets/error_view.dart';
 import '../../../shared/widgets/shimmer_loader.dart';
 import '../data/goal_model.dart';
 import '../providers/goals_provider.dart';
@@ -22,7 +24,14 @@ class GoalDetailScreen extends ConsumerWidget {
 
     return async.when(
       loading: () => const Scaffold(body: Padding(padding: EdgeInsets.all(16), child: ShimmerLoader())),
-      error: (e, _) => Scaffold(body: Center(child: Text('Error: $e'))),
+      error: (e, _) => Scaffold(
+        body: SafeArea(
+          child: ErrorView(
+            error: e,
+            onRetry: () => ref.invalidate(goalDetailProvider(goalId)),
+          ),
+        ),
+      ),
       data: (goal) => _GoalDetailBody(goal: goal),
     );
   }
@@ -289,11 +298,7 @@ class _GoalDetailBodyState extends ConsumerState<_GoalDetailBody> {
       final updated = await ref.read(goalsRepositoryProvider).removeContribution(_goal.id, cId);
       setState(() => _goal = updated);
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger),
-        );
-      }
+      if (context.mounted) showErrorSnack(context, e);
     }
   }
 
@@ -743,11 +748,7 @@ class _AddContributionSheetState extends ConsumerState<AddContributionSheet> {
       widget.onAdded(updated);
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger),
-        );
-      }
+      if (mounted) showErrorSnack(context, e);
     } finally {
       if (mounted) setState(() => _loading = false);
     }

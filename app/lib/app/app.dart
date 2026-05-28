@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'router/app_router.dart';
 import 'theme/app_theme.dart';
+import '../core/network/dio_client.dart';
 import '../core/network/realtime.dart';
+import '../core/services/in_app_banner.dart';
 import '../core/services/push_notifications_service.dart';
 import '../features/auth/providers/auth_provider.dart';
 import '../features/settings/settings_providers.dart';
@@ -22,6 +24,13 @@ class _ExpenseAppState extends ConsumerState<ExpenseApp> with WidgetsBindingObse
     super.initState();
     // Only mobile needs lifecycle-based reconnect; web handles it natively.
     if (!kIsWeb) WidgetsBinding.instance.addObserver(this);
+    // When the network layer can't refresh the session (refresh token
+    // revoked/expired), force the app back to sign-in instead of leaving
+    // the user stuck on an authenticated UI whose every request 401s.
+    DioClient.setOnAuthFailure(() {
+      if (!mounted) return;
+      ref.read(authProvider.notifier).forceLogout();
+    });
   }
 
   @override
@@ -57,6 +66,10 @@ class _ExpenseAppState extends ConsumerState<ExpenseApp> with WidgetsBindingObse
         router.go(route);
       } catch (_) {}
     });
+
+    // Give the in-app banner overlay access to the root navigator so
+    // socket events can show a transient toast from anywhere in the app.
+    InAppBanner.instance.attach(rootNavigatorKey);
 
     return MaterialApp.router(
       title: 'Expensplit',

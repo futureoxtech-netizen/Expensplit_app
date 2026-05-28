@@ -473,13 +473,30 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         .toList()
       ..sort((a, b) => a.date.compareTo(b.date));
 
+    // Personal expenses have no group / payer — fall back to a friendly
+    // "Personal" label so the Transactions table can render every row.
+    final me = ref.read(authProvider).user;
+    final reportItems = items
+        .map((e) => ReportItem(
+              id: e.id,
+              description: e.description,
+              amount: e.amount,
+              currency: e.currency,
+              category: e.category,
+              paidBy: me?.name ?? 'You',
+              groupName: 'Personal',
+              spentAt: e.date,
+            ))
+        .toList()
+      ..sort((a, b) => b.spentAt.compareTo(a.spentAt));
+
     return ReportData(
       from: from,
       to: to,
       totals: ReportTotals(total: total, count: count, paid: total),
       byCategory: byCategory,
       byDay: byDay,
-      items: [],
+      items: reportItems,
     );
   }
 
@@ -510,13 +527,16 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         .toList()
       ..sort((a, b) => a.date.compareTo(b.date));
 
+    final combinedItems = [...groups.items, ...personal.items]
+      ..sort((a, b) => b.spentAt.compareTo(a.spentAt));
+
     return ReportData(
       from: groups.from,
       to: groups.to,
       totals: ReportTotals(total: total, count: count, paid: paid),
       byCategory: byCategory,
       byDay: byDay,
-      items: [...groups.items],
+      items: combinedItems,
     );
   }
 

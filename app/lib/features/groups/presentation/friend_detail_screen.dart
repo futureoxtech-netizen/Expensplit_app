@@ -3,15 +3,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/error_messages.dart';
+import '../../../core/pagination/paged_sliver_list.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../shared/widgets/avatar.dart';
+import '../../../shared/widgets/error_view.dart';
 import '../../../shared/widgets/shimmer_loader.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../settlements/providers/settlement_providers.dart';
 import '../data/friend_summary_model.dart';
 import '../providers/group_providers.dart';
 
-class FriendDetailScreen extends ConsumerWidget {
+class FriendDetailScreen extends ConsumerStatefulWidget {
   const FriendDetailScreen({
     super.key,
     required this.friend,
@@ -22,22 +24,56 @@ class FriendDetailScreen extends ConsumerWidget {
   final String friendId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final detailAsync = ref.watch(friendDetailProvider(friendId));
+  ConsumerState<FriendDetailScreen> createState() => _FriendDetailScreenState();
+}
+
+class _FriendDetailScreenState extends ConsumerState<FriendDetailScreen> {
+  final _scrollCtrl = ScrollController();
+  PaginatedScrollListener? _scrollListener;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollListener = PaginatedScrollListener(
+      controller: _scrollCtrl,
+      onLoadMore: () => ref
+          .read(friendTransactionsPagedProvider(widget.friendId).notifier)
+          .loadMore(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _scrollListener?.dispose();
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final user = ref.watch(authProvider).user;
     final currency = user?.currency ?? 'USD';
+    final txState =
+        ref.watch(friendTransactionsPagedProvider(widget.friendId));
+    final txNotifier =
+        ref.read(friendTransactionsPagedProvider(widget.friendId).notifier);
 
     // Watch live summary so balance updates immediately after settlement
     final summaryAsync = ref.watch(friendsSummaryProvider);
     final net = summaryAsync.valueOrNull
-            ?.firstWhere((f) => f.userId == friendId, orElse: () => friend)
+            ?.firstWhere(
+              (f) => f.userId == widget.friendId,
+              orElse: () => widget.friend,
+            )
             .net ??
-        friend.net;
+        widget.friend.net;
     final isOwed = net > 0;
     final isSettled = net.abs() < 0.005;
+    final friend = widget.friend;
 
     return Scaffold(
       body: CustomScrollView(
+        controller: _scrollCtrl,
         slivers: [
           // ── Gradient header ──────────────────────────────────────────
           SliverAppBar(
@@ -110,69 +146,60 @@ class FriendDetailScreen extends ConsumerWidget {
             ),
           ),
 
-          // ── Transaction list ─────────────────────────────────────────
-          detailAsync.when(
-            loading: () => const SliverFillRemaining(child: ShimmerLoader()),
-            error: (e, _) => SliverFillRemaining(
-              child: Center(child: Text(e.toString())),
-            ),
-            data: (detail) {
-              if (detail.transactions.isEmpty) {
-                return const SliverFillRemaining(
-                  child: Center(
-                    child: Text(
-                      'No shared transactions yet.',
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  ),
-                );
-              }
-
-              // Group transactions by month
-              final grouped = <String, List<FriendTransaction>>{};
-              for (final t in detail.transactions) {
-                final key =
-                    '${_monthName(t.date.month)} ${t.date.year}';
-                grouped.putIfAbsent(key, () => []).add(t);
-              }
-
-              final keys = grouped.keys.toList();
-              return SliverPadding(
-                padding: const EdgeInsets.fromLTRB(0, 8, 0, 80),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, i) {
-                      final month = keys[i];
-                      final txns = grouped[month]!;
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Padding(
-                            padding:
-                                const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                            child: Text(
-                              month,
-                              style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurface
-                                      .withOpacity(0.5)),
-                            ),
-                          ),
-                          for (final t in txns)
-                            _TxnRow(
-                              txn: t,
-                              currency: currency,
-                              friendName: friend.user.name,
-                            ),
-                        ],
-                      );
-                    },
-                    childCount: keys.length,
-                  ),
+          // ── Transaction list (paginated) ────────────────────────────
+          // We inject month headers inline by tracking the previous row's
+          // month while scrolling. The paged notifier guarantees stable
+          // descending-date ordering.
+          PagedSliverList<FriendTransaction>(
+            state: txState,
+            onLoadFirst: txNotifier.loadFirst,
+            onRetryMore: txNotifier.loadMore,
+            padding: const EdgeInsets.fromLTRB(0, 8, 0, 80),
+            firstPageBuilder: (ctx, s) => s.error != null
+                ? ErrorView(
+                    error: s.error,
+                    onRetry: txNotifier.loadFirst,
+                  )
+                : const ShimmerLoader(),
+            emptyBuilder: (ctx) => const Padding(
+              padding: EdgeInsets.symmetric(vertical: 60),
+              child: Center(
+                child: Text(
+                  'No shared transactions yet.',
+                  style: TextStyle(color: Colors.grey),
                 ),
+              ),
+            ),
+            itemBuilder: (ctx, t, i) {
+              final items = txState.items!;
+              final prev = i > 0 ? items[i - 1] : null;
+              final showHeader = prev == null ||
+                  prev.date.month != t.date.month ||
+                  prev.date.year != t.date.year;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (showHeader)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: Text(
+                        '${_FriendDetailScreenState._monthName(t.date.month)} ${t.date.year}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withOpacity(0.5),
+                        ),
+                      ),
+                    ),
+                  _TxnRow(
+                    txn: t,
+                    currency: currency,
+                    friendName: friend.user.name,
+                  ),
+                ],
               );
             },
           ),
@@ -191,14 +218,15 @@ class FriendDetailScreen extends ConsumerWidget {
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => _SettleUpSheet(
-        friend: friend,
+        friend: widget.friend,
         net: net,
         currency: currency,
         ref: ref,
       ),
     );
     if (settled != null && context.mounted) {
-      _showSettlementSuccess(context, settled, currency, friend.user.name);
+      _showSettlementSuccess(
+          context, settled, currency, widget.friend.user.name);
     }
   }
 
@@ -286,8 +314,20 @@ class _TxnRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isPayment = txn.type == 'settlement';
+    // For settlements `net > 0` means the current user was the payer (from=me);
+    // for expenses it means the friend owes the current user. The label & color
+    // differ between the two — a settlement is just a cash-flow record, not a
+    // debt direction.
     final isOwedToMe = txn.net > 0;
-    final amtColor = isOwedToMe ? AppColors.primary : Colors.orange;
+    final Color amtColor;
+    final String amtLabel;
+    if (isPayment) {
+      amtLabel = isOwedToMe ? 'you paid' : 'you received';
+      amtColor = isOwedToMe ? Colors.orange : AppColors.primary;
+    } else {
+      amtLabel = isOwedToMe ? 'you are owed' : 'you owe';
+      amtColor = isOwedToMe ? AppColors.primary : Colors.orange;
+    }
 
     Color groupColor;
     try {
@@ -358,7 +398,7 @@ class _TxnRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                isOwedToMe ? 'you are owed' : 'you owe',
+                amtLabel,
                 style: TextStyle(
                     fontSize: 10, color: amtColor.withOpacity(0.8)),
               ),
@@ -558,6 +598,8 @@ class _SettleUpSheetState extends State<_SettleUpSheet> {
       );
       widget.ref.invalidate(friendsSummaryProvider);
       widget.ref.invalidate(friendDetailProvider(widget.friend.userId));
+      widget.ref.invalidate(
+          friendTransactionsPagedProvider(widget.friend.userId));
       if (mounted) Navigator.pop(context, enteredAmount);
     } catch (e) {
       if (mounted) showErrorSnack(context, e, fallback: 'Could not record settlement');

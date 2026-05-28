@@ -6,6 +6,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/pagination/paged_sliver_list.dart';
 import '../../../shared/widgets/app_sheet.dart';
 import '../../../shared/widgets/avatar.dart';
 import '../../../shared/widgets/category_icon.dart';
@@ -16,6 +17,7 @@ import '../../../core/errors/error_messages.dart';
 import '../../../core/network/realtime.dart';
 import '../../../shared/widgets/shimmer_loader.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../expenses/data/expense_model.dart';
 import '../../expenses/providers/expense_providers.dart';
 import '../../settlements/providers/settlement_providers.dart';
 import '../data/group_model.dart';
@@ -55,9 +57,24 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
       loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, _) => Scaffold(body: Center(child: Text(friendlyError(e)))),
       data: (group) {
+        final color = _parseColor(group.coverColor) ?? AppColors.primary;
         return Scaffold(
           appBar: AppBar(
             title: Text(group.name),
+            // Explicit leading — go_router's `pushReplacement` keeps history
+            // intact, but if the user arrived via `go` (e.g. older builds,
+            // a deep link) the auto-back disappears. Fall back to /groups.
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_rounded),
+              tooltip: 'Back',
+              onPressed: () {
+                if (context.canPop()) {
+                  context.pop();
+                } else {
+                  context.go('/groups');
+                }
+              },
+            ),
             actions: [
               IconButton(
                 icon: const Icon(Icons.edit_rounded),
@@ -72,8 +89,8 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
             ],
             bottom: TabBar(
               controller: _tab,
-              labelColor: AppColors.primary,
-              indicatorColor: AppColors.primary,
+              labelColor: color,
+              indicatorColor: color,
               tabs: const [
                 Tab(text: 'Expenses'),
                 Tab(text: 'Balances'),
@@ -82,7 +99,7 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
             ),
           ),
           floatingActionButton: FloatingActionButton.extended(
-            backgroundColor: AppColors.primary,
+            backgroundColor: color,
             onPressed: () => context.push('/groups/${group.id}/expenses/new'),
             icon: const Icon(Icons.add, color: Colors.white),
             label: const Text('Add expense', style: TextStyle(color: Colors.white)),
@@ -90,9 +107,9 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
           body: TabBarView(
             controller: _tab,
             children: [
-              _ExpensesTab(groupId: group.id),
-              _BalancesTab(group: group),
-              _MembersTab(group: group),
+              _ExpensesTab(groupId: group.id, groupColor: color),
+              _BalancesTab(group: group, groupColor: color),
+              _MembersTab(group: group, groupColor: color),
             ],
           ),
         );
@@ -106,6 +123,16 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
       builder: (sheetCtx) => _InviteSheet(group: g),
     );
   }
+}
+
+/// Parses `#RRGGBB` into a Flutter [Color]. Returns null if [hex] is not a
+/// well-formed 6-digit hex string — callers should fall back to a default.
+Color? _parseColor(String hex) {
+  final clean = hex.replaceFirst('#', '');
+  if (clean.length != 6) return null;
+  final parsed = int.tryParse(clean, radix: 16);
+  if (parsed == null) return null;
+  return Color(0xFF000000 | parsed);
 }
 
 class _InviteSheet extends StatelessWidget {
@@ -286,38 +313,71 @@ class _InviteSheet extends StatelessWidget {
   }
 }
 
-class _ExpensesTab extends ConsumerWidget {
-  const _ExpensesTab({required this.groupId});
+class _ExpensesTab extends ConsumerStatefulWidget {
+  const _ExpensesTab({required this.groupId, required this.groupColor});
   final String groupId;
+  final Color groupColor;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(groupExpensesProvider(groupId));
+  ConsumerState<_ExpensesTab> createState() => _ExpensesTabState();
+}
+
+class _ExpensesTabState extends ConsumerState<_ExpensesTab> {
+  final _scrollCtrl = ScrollController();
+  PaginatedScrollListener? _scrollListener;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollListener = PaginatedScrollListener(
+      controller: _scrollCtrl,
+      onLoadMore: () => ref
+          .read(groupExpensesPagedProvider(widget.groupId).notifier)
+          .loadMore(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _scrollListener?.dispose();
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(groupExpensesPagedProvider(widget.groupId));
+    final notifier =
+        ref.read(groupExpensesPagedProvider(widget.groupId).notifier);
+    final me = ref.read(authProvider).user;
+
     return RefreshIndicator(
-      onRefresh: () async => ref.invalidate(groupExpensesProvider(groupId)),
-      child: async.when(
-        loading: () => const Padding(padding: EdgeInsets.all(16), child: ShimmerLoader()),
-        error: (e, _) => ListView(children: [Padding(padding: const EdgeInsets.all(20), child: Text(friendlyError(e)))]),
-        data: (page) {
-          if (page.items.isEmpty) {
-            return ListView(
-              children: const [
-                SizedBox(height: 100),
-                EmptyState(
-                  icon: Icons.receipt_long_rounded,
-                  title: 'No expenses yet',
-                  subtitle: 'Tap "Add expense" to record your first one.',
-                ),
-              ],
-            );
-          }
-          final me = ref.read(authProvider).user;
-          return ListView.separated(
+      onRefresh: notifier.refresh,
+      child: CustomScrollView(
+        controller: _scrollCtrl,
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          PagedSliverList<ExpenseModel>(
+            state: state,
+            onLoadFirst: notifier.loadFirst,
+            onRetryMore: notifier.loadMore,
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 120),
-            itemCount: page.items.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 10),
-            itemBuilder: (_, i) {
-              final e = page.items[i];
+            firstPageBuilder: (ctx, s) => s.error != null
+                ? Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Text(friendlyError(s.error)),
+                  )
+                : const ShimmerLoader(),
+            emptyBuilder: (ctx) => const Padding(
+              padding: EdgeInsets.only(top: 100),
+              child: EmptyState(
+                icon: Icons.receipt_long_rounded,
+                title: 'No expenses yet',
+                subtitle: 'Tap "Add expense" to record your first one.',
+              ),
+            ),
+            separator: const SizedBox(height: 10),
+            itemBuilder: (ctx, e, _) {
               final myShare = e.shares
                   .where((s) => s.user.id == me?.id)
                   .fold<double>(0, (a, s) => a + s.amount);
@@ -329,16 +389,17 @@ class _ExpensesTab extends ConsumerWidget {
                 onTap: () => GoRouter.of(context).push('/expenses/${e.id}'),
               );
             },
-          );
-        },
+          ),
+        ],
       ),
     );
   }
 }
 
 class _BalancesTab extends ConsumerWidget {
-  const _BalancesTab({required this.group});
+  const _BalancesTab({required this.group, required this.groupColor});
   final GroupModel group;
+  final Color groupColor;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -632,8 +693,9 @@ class _BalancesTab extends ConsumerWidget {
 }
 
 class _MembersTab extends ConsumerWidget {
-  const _MembersTab({required this.group});
+  const _MembersTab({required this.group, required this.groupColor});
   final GroupModel group;
+  final Color groupColor;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -672,14 +734,14 @@ class _MembersTab extends ConsumerWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.12),
+                    color: groupColor.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(m.role,
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
-                          color: AppColors.primary)),
+                          color: groupColor)),
                 ),
               ],
             ),
@@ -688,6 +750,11 @@ class _MembersTab extends ConsumerWidget {
         PrimaryButton(
           icon: Icons.person_add_alt_1_rounded,
           label: 'Invite member',
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [groupColor, Color.lerp(groupColor, Colors.white, 0.18)!],
+          ),
           onPressed: () => _invite(context, ref),
         ),
       ],
@@ -695,35 +762,213 @@ class _MembersTab extends ConsumerWidget {
   }
 
   Future<void> _invite(BuildContext context, WidgetRef ref) async {
-    final ctrl = TextEditingController();
+    final email = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => _InviteByEmailSheet(
+        groupName: group.name,
+        groupColor: groupColor,
+      ),
+    );
+    if (email == null || email.isEmpty) return;
     try {
-      final email = await showDialog<String>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Invite by email'),
-          content: TextField(
-            controller: ctrl,
-            autofocus: true,
-            keyboardType: TextInputType.emailAddress,
-            decoration: const InputDecoration(hintText: 'name@example.com'),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim()), child: const Text('Invite')),
-          ],
-        ),
-      );
-      if (email == null || email.isEmpty) return;
-      try {
-        await ref.read(groupRepositoryProvider).addMember(group.id, email);
-        ref.invalidate(groupDetailProvider(group.id));
-        if (context.mounted) showSuccessSnack(context, 'Member added');
-      } catch (e) {
-        if (context.mounted) showErrorSnack(context, e, fallback: 'Could not invite member');
-      }
-    } finally {
-      ctrl.dispose();
+      await ref.read(groupRepositoryProvider).addMember(group.id, email);
+      ref.invalidate(groupDetailProvider(group.id));
+      if (context.mounted) showSuccessSnack(context, 'Member added to "${group.name}"');
+    } catch (e) {
+      if (context.mounted) showErrorSnack(context, e, fallback: 'Could not invite member');
     }
+  }
+}
+
+/// Bottom sheet that collects an email and returns it via Navigator.pop.
+/// Returns null when the user dismisses without confirming.
+class _InviteByEmailSheet extends StatefulWidget {
+  const _InviteByEmailSheet({required this.groupName, required this.groupColor});
+  final String groupName;
+  final Color groupColor;
+
+  @override
+  State<_InviteByEmailSheet> createState() => _InviteByEmailSheetState();
+}
+
+class _InviteByEmailSheetState extends State<_InviteByEmailSheet> {
+  final _ctrl = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  bool _isEmail(String v) {
+    final s = v.trim();
+    if (s.isEmpty) return false;
+    final at = s.indexOf('@');
+    final dot = s.lastIndexOf('.');
+    return at > 0 && dot > at + 1 && dot < s.length - 1;
+  }
+
+  void _submit() {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    Navigator.of(context).pop(_ctrl.text.trim());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final color = widget.groupColor;
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 28),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Grip
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 18),
+                    decoration: BoxDecoration(
+                      color: cs.onSurface.withOpacity(0.18),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                // Hero icon
+                Center(
+                  child: Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [color, Color.lerp(color, Colors.white, 0.25)!],
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: color.withOpacity(0.32),
+                          blurRadius: 18,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.person_add_alt_1_rounded,
+                      color: Colors.white,
+                      size: 30,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Center(
+                  child: Text(
+                    'Invite to ${widget.groupName}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Center(
+                  child: Text(
+                    'Enter the email of someone already on Expensplit. They\'ll be added instantly.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: cs.onSurface.withOpacity(0.6),
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 22),
+                TextFormField(
+                  controller: _ctrl,
+                  autofocus: true,
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.done,
+                  onFieldSubmitted: (_) => _submit(),
+                  decoration: InputDecoration(
+                    labelText: 'Email address',
+                    hintText: 'name@example.com',
+                    prefixIcon: Icon(Icons.alternate_email_rounded, color: color),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: cs.onSurface.withOpacity(0.15)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: cs.onSurface.withOpacity(0.15)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: color, width: 1.6),
+                    ),
+                  ),
+                  validator: (v) =>
+                      _isEmail(v ?? '') ? null : 'Enter a valid email address',
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          side: BorderSide(color: cs.onSurface.withOpacity(0.18)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: _submit,
+                        icon: const Icon(Icons.send_rounded, size: 18),
+                        label: const Text(
+                          'Send invite',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: color,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

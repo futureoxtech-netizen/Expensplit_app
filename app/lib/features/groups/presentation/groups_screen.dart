@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../shared/widgets/empty_state.dart';
+import '../../../shared/widgets/error_view.dart';
 import '../../../shared/widgets/gradient_scaffold.dart';
 import '../../../shared/widgets/shimmer_loader.dart';
 import '../providers/group_providers.dart';
@@ -20,7 +21,8 @@ class GroupsScreen extends ConsumerWidget {
       child: RefreshIndicator(
         onRefresh: () async => ref.invalidate(groupsListProvider),
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
+          // No FAB on this screen — bottom nav bar clearance only.
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
           children: [
             const Text('Groups',
                 style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800)),
@@ -82,7 +84,10 @@ class GroupsScreen extends ConsumerWidget {
                 );
               },
               loading: () => const ShimmerLoader(height: 78),
-              error: (e, _) => Text('$e'),
+              error: (e, _) => ErrorView(
+                error: e,
+                onRetry: () => ref.invalidate(groupsListProvider),
+              ),
             ),
           ],
         ),

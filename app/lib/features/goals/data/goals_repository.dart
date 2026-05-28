@@ -1,4 +1,5 @@
 import '../../../core/network/dio_client.dart';
+import '../../../core/pagination/paged_list_notifier.dart';
 import 'goal_model.dart';
 
 class GoalsRepository {
@@ -10,6 +11,15 @@ class GoalsRepository {
     if (status != null) params['status'] = status;
     final res = await _client.get('/goals', query: params);
     return GoalsPage.fromJson(res as Map<String, dynamic>);
+  }
+
+  Future<PagedResult<GoalModel>> listPaged({
+    String? status,
+    int page = 1,
+    int limit = 20,
+  }) async {
+    final p = await list(status: status, page: page, limit: limit);
+    return PagedResult(items: p.items, hasMore: p.hasMore);
   }
 
   Future<GoalModel> getById(String id) async {

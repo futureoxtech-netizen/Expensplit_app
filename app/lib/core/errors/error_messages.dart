@@ -115,6 +115,9 @@ String? _byCode(String? code) {
       return 'This account was created with Google Sign-In. Please use the "Continue with Google" button.';
     case 'USER_NOT_FOUND':
       return 'No account found with that email address.';
+    case 'EMAIL_NOT_REGISTERED':
+      // Server message already explains how to resolve — pass it through.
+      return null;
     case 'OTP_COOLDOWN':
       return 'Please wait before requesting another code.';
     case 'OTP_EXPIRED':

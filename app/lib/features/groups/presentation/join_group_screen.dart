@@ -31,7 +31,9 @@ class _JoinGroupScreenState extends ConsumerState<JoinGroupScreen> {
       // Subscribe to the new group's realtime room immediately so future
       // events arrive without waiting for the next app launch / bootstrap.
       ref.read(realtimeBridgeProvider).joinGroup(group.id);
-      if (mounted) context.go('/groups/${group.id}');
+      // pushReplacement keeps the groups list underneath so the new group
+      // detail still has a working back button.
+      if (mounted) context.pushReplacement('/groups/${group.id}');
     } catch (e) {
       if (mounted) showErrorSnack(context, e, fallback: 'Could not join group');
     } finally {

@@ -94,7 +94,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     return GradientScaffold(
       padding: EdgeInsets.zero,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 24, 20, 120),
+        // No FAB on this screen — only the bottom nav bar needs clearance.
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
         children: [
           Center(
             child: Column(
@@ -149,20 +150,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
                   ),
                 ),
-                if (user?.referralCode != null) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      gradient: AppColors.brandGradient,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      'Referral · ${user!.referralCode}',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                ],
+                // Referral pill removed pending a proper referrals feature.
+                // The backend still issues a code on signup; the UI just
+                // doesn't surface it for now.
               ],
             ),
           ),

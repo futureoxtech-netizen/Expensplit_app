@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/dio_client.dart';
+import '../../../core/pagination/paged_list_notifier.dart';
 import '../data/personal_expense_model.dart';
 import '../data/personal_expense_repository.dart';
 
@@ -9,7 +10,9 @@ final personalExpenseRepositoryProvider =
   (ref) => PersonalExpenseRepository(DioClient.instance),
 );
 
-// List for a date range — key: (from, to)
+/// Aggregating provider — walks all pages and returns the full set for the
+/// date range. Used by the dashboard spending card and the reports module,
+/// which need totals rather than scroll-driven UI.
 final personalExpenseListProvider = FutureProvider.family<
     List<PersonalExpenseModel>, (DateTime from, DateTime to)>(
   (ref, range) async {
@@ -17,6 +20,25 @@ final personalExpenseListProvider = FutureProvider.family<
     return repo.list(from: range.$1, to: range.$2);
   },
 );
+
+/// Infinite-scroll provider for the Personal tracker screen. Key includes
+/// the date range so changing the period (daily/weekly/monthly) creates a
+/// fresh notifier instance with a fresh scroll cursor.
+final personalExpensesPagedProvider = StateNotifierProvider.autoDispose.family<
+    PagedListNotifier<PersonalExpenseModel>,
+    PagedListState<PersonalExpenseModel>,
+    (DateTime, DateTime)>((ref, range) {
+  final repo = ref.watch(personalExpenseRepositoryProvider);
+  return PagedListNotifier<PersonalExpenseModel>(
+    fetcher: (page, limit) => repo.listPaged(
+      from: range.$1,
+      to: range.$2,
+      page: page,
+      limit: limit,
+    ),
+    limit: 30,
+  );
+});
 
 // Summary for chart
 final personalSummaryProvider =

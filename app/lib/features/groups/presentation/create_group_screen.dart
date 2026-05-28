@@ -47,7 +47,10 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
         currency: ref.read(authProvider).user?.currency,
       );
       ref.invalidate(groupsListProvider);
-      if (mounted) context.go('/groups/${group.id}');
+      // pushReplacement (not go) so the create screen is removed but the
+      // groups list stays underneath — otherwise the new group detail has
+      // no back button.
+      if (mounted) context.pushReplacement('/groups/${group.id}');
     } catch (e) {
       if (mounted) showErrorSnack(context, e, fallback: 'Could not create group');
     } finally {

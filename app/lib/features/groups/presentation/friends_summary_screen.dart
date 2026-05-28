@@ -71,7 +71,8 @@ class _FriendsSummaryScreenState extends ConsumerState<FriendsSummaryScreen> {
                 }
 
                 return SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+                  // No FAB on this screen — bottom nav bar clearance only.
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                   sliver: SliverList(
                     delegate: SliverChildListDelegate([
                       const SizedBox(height: 8),

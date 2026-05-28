@@ -17,7 +17,7 @@ class DioClient {
         validateStatus: (s) => s != null && s < 500,
       ),
     );
-    _dio.interceptors.add(_AuthInterceptor(_dio));
+    _dio.interceptors.add(_AuthInterceptor(_dio, () => _onAuthFailure?.call()));
     if (kDebugMode) {
       _dio.interceptors.add(
         LogInterceptor(
@@ -34,6 +34,14 @@ class DioClient {
   late final Dio _dio;
   static final DioClient instance = DioClient._();
   Dio get raw => _dio;
+
+  /// Invoked when refresh fails — the session is no longer recoverable
+  /// and the app should drop to the sign-in screen. Wire from the auth
+  /// layer (see AuthNotifier).
+  static void Function()? _onAuthFailure;
+  static void setOnAuthFailure(void Function() handler) {
+    _onAuthFailure = handler;
+  }
 
   Future<Map<String, dynamic>> get(String path, {Map<String, dynamic>? query}) async {
     final res = await _dio.get(path, queryParameters: query);
@@ -70,11 +78,13 @@ class DioClient {
 }
 
 class _AuthInterceptor extends Interceptor {
-  _AuthInterceptor(this._dio);
+  _AuthInterceptor(this._dio, this._notifyAuthFailure);
 
   final Dio _dio;
+  final void Function() _notifyAuthFailure;
   bool _refreshing = false;
   Future<bool>? _pendingRefresh;
+  bool _failureNotified = false;
 
   @override
   Future<void> onRequest(RequestOptions options, RequestInterceptorHandler handler) async {
@@ -90,17 +100,35 @@ class _AuthInterceptor extends Interceptor {
   @override
   Future<void> onResponse(Response response, ResponseInterceptorHandler handler) async {
     if (response.statusCode == 401 && response.requestOptions.extra['retried'] != true) {
-      final refreshed = await _attemptRefresh();
-      if (refreshed) {
-        final req = response.requestOptions;
-        req.extra['retried'] = true;
-        final token = await TokenStorage.instance.readAccess();
-        if (token != null) req.headers['Authorization'] = 'Bearer $token';
-        try {
-          final clone = await _dio.fetch(req);
-          return handler.resolve(clone);
-        } catch (e) {
-          return handler.next(response);
+      // Auth-endpoint 401s mean wrong credentials, not an expired session — never refresh those.
+      final path = response.requestOptions.path;
+      final isAuthEndpoint = path.startsWith('/auth/login') ||
+          path.startsWith('/auth/register') ||
+          path.startsWith('/auth/refresh') ||
+          path.startsWith('/auth/google') ||
+          path.startsWith('/auth/forgot-password');
+      if (!isAuthEndpoint) {
+        final refreshed = await _attemptRefresh();
+        if (refreshed) {
+          _failureNotified = false;
+          final req = response.requestOptions;
+          req.extra['retried'] = true;
+          final token = await TokenStorage.instance.readAccess();
+          if (token != null) req.headers['Authorization'] = 'Bearer $token';
+          try {
+            final clone = await _dio.fetch(req);
+            return handler.resolve(clone);
+          } catch (_) {
+            return handler.next(response);
+          }
+        } else {
+          // Refresh failed — session is unrecoverable. Trigger a single
+          // force-logout; subsequent 401s in the same burst should not
+          // re-fire the handler.
+          if (!_failureNotified) {
+            _failureNotified = true;
+            _notifyAuthFailure();
+          }
         }
       }
     }
