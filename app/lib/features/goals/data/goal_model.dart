@@ -121,7 +121,7 @@ class GoalModel {
         category: j['category'] as String? ?? 'other',
         targetAmount: (j['targetAmount'] as num).toDouble(),
         savedAmount: (j['savedAmount'] as num?)?.toDouble() ?? 0,
-        currency: j['currency'] as String? ?? 'USD',
+        currency: j['currency'] as String? ?? 'PKR',
         targetDate: j['targetDate'] != null
             ? DateTime.tryParse(j['targetDate'] as String)
             : null,

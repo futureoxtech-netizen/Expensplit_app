@@ -157,6 +157,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
           ),
           const SizedBox(height: 28),
+          const _SectionTitle('Account'),
+          _Tile(
+            icon: Icons.person_outline_rounded,
+            title: 'Edit profile',
+            subtitle: 'Name, photo and bio',
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => context.push('/profile/edit'),
+          ),
+          _Tile(
+            icon: Icons.lock_outline_rounded,
+            title: 'Change password',
+            subtitle: 'Update your account password',
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => context.push('/profile/password'),
+          ),
+          const SizedBox(height: 20),
           const _SectionTitle('Preferences'),
           _Tile(
             icon: Icons.palette_rounded,
@@ -180,7 +196,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             subtitle:
                 user == null ? null : '${user.currency} · ${_supportedCurrencies[user.currency] ?? ""}',
             trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: () => _pickCurrency(user?.currency ?? 'USD'),
+            onTap: () => _pickCurrency(user?.currency ?? 'PKR'),
           ),
           const SizedBox(height: 20),
           const _SectionTitle('Notifications'),

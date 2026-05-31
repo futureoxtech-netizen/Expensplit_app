@@ -52,7 +52,7 @@ class _FriendDetailScreenState extends ConsumerState<FriendDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authProvider).user;
-    final currency = user?.currency ?? 'USD';
+    final currency = user?.currency ?? 'PKR';
     final txState =
         ref.watch(friendTransactionsPagedProvider(widget.friendId));
     final txNotifier =

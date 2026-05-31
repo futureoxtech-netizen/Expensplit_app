@@ -1,11 +1,13 @@
 import mongoose from 'mongoose';
 import { Expense } from './expense.model.js';
 import { Group } from '../groups/group.model.js';
+import { Settlement } from '../settlements/settlement.model.js';
 import { computeShares } from '../../utils/splitCalculator.js';
 import { BadRequest, Forbidden, NotFound } from '../../utils/errors.js';
 import { emitToGroup } from '../../socket/index.js';
 import { activityService } from '../activity/activity.service.js';
 import { notifyUsers, actorName } from '../../services/notifications.service.js';
+import { reactionService } from '../reactions/reaction.service.js';
 
 async function getGroupAsMember(groupId, userId) {
   if (!mongoose.isValidObjectId(groupId)) throw NotFound('Group not found');
@@ -139,7 +141,94 @@ export const expenseService = {
         .lean(),
       Expense.countDocuments({ group: group._id, deletedAt: null }),
     ]);
-    return { items: items.map(sanitiseExpense), total, page, limit, hasMore: skip + items.length < total };
+    const sanitised = items.map(sanitiseExpense);
+    const reactionMap = await reactionService.summariesByTarget({
+      targetType: 'expense',
+      ids: sanitised.map((e) => e._id),
+    });
+    for (const e of sanitised) e.reactions = reactionMap.get(e._id.toString()) ?? [];
+    return { items: sanitised, total, page, limit, hasMore: skip + items.length < total };
+  },
+
+  // Unified group activity for the group-detail "Expenses" tab: expenses and
+  // settlements merged into one date-sorted stream, so a recorded payment
+  // ("Sara paid you") shows up alongside expenses just like Splitwise. Both
+  // collections are small per-group, so we merge in memory and page the
+  // result (mirrors the friend-transactions endpoint).
+  async groupTransactions({ userId, groupId, page = 1, limit = 30 }) {
+    const group = await getGroupAsMember(groupId, userId);
+
+    const [expenses, settlements] = await Promise.all([
+      Expense.find({ group: group._id, deletedAt: null })
+        .sort({ spentAt: -1 })
+        .populate('paidBy', 'name email avatarUrl')
+        .populate('shares.user', 'name email avatarUrl')
+        .lean(),
+      Settlement.find({ group: group._id })
+        .sort({ settledAt: -1 })
+        .populate('from', 'name avatarUrl')
+        .populate('to', 'name avatarUrl')
+        .lean(),
+    ]);
+
+    const expenseItems = expenses.map((e) => ({
+      ...sanitiseExpense(e),
+      type: 'expense',
+      _sortDate: e.spentAt,
+    }));
+
+    const userLabel = (u) =>
+      u ? { id: u._id.toString(), name: u.name, avatarUrl: u.avatarUrl ?? null } : null;
+
+    const settlementItems = settlements.map((s) => ({
+      type: 'settlement',
+      id: s._id.toString(),
+      groupId: group._id.toString(),
+      from: userLabel(s.from),
+      to: userLabel(s.to),
+      amount: s.amount,
+      currency: s.currency,
+      note: s.note ?? '',
+      settledAt: s.settledAt,
+      _sortDate: s.settledAt,
+    }));
+
+    const all = [...expenseItems, ...settlementItems].sort(
+      (a, b) => new Date(b._sortDate) - new Date(a._sortDate),
+    );
+
+    const skip = (page - 1) * limit;
+    const pageItems = all
+      .slice(skip, skip + limit)
+      // Drop the internal sort key before sending.
+      .map(({ _sortDate, ...rest }) => rest);
+
+    // Attach reactions only for the items actually on this page — both shapes
+    // can carry reactions, so resolve each target type in one query apiece.
+    const [expReactions, setReactions] = await Promise.all([
+      reactionService.summariesByTarget({
+        targetType: 'expense',
+        ids: pageItems.filter((i) => i.type === 'expense').map((i) => i._id),
+      }),
+      reactionService.summariesByTarget({
+        targetType: 'settlement',
+        ids: pageItems.filter((i) => i.type === 'settlement').map((i) => i.id),
+      }),
+    ]);
+    for (const item of pageItems) {
+      item.reactions =
+        item.type === 'expense'
+          ? expReactions.get(item._id.toString()) ?? []
+          : setReactions.get(item.id.toString()) ?? [];
+    }
+
+    return {
+      items: pageItems,
+      total: all.length,
+      page,
+      limit,
+      hasMore: skip + pageItems.length < all.length,
+    };
   },
 
   async getById({ userId, expenseId }) {
@@ -148,7 +237,9 @@ export const expenseService = {
       .populate('shares.user', 'name email avatarUrl');
     if (!expense || expense.deletedAt) throw NotFound('Expense not found');
     await getGroupAsMember(expense.group, userId);
-    return sanitiseExpense(expense);
+    const out = sanitiseExpense(expense);
+    out.reactions = await reactionService.summaryFor({ targetType: 'expense', targetId: expense._id });
+    return out;
   },
 
   async update({ userId, expenseId, patch }) {
@@ -257,6 +348,8 @@ export const expenseService = {
     // Any group member can delete an expense
     expense.deletedAt = new Date();
     await expense.save();
+    // Reactions on a deleted expense are never surfaced again — drop them.
+    await reactionService.purgeForTarget({ targetType: 'expense', targetId: expense._id }).catch(() => {});
     await activityService.log({
       groupId: group._id,
       actor: userId,
@@ -304,7 +397,13 @@ export const expenseService = {
         .lean(),
       Expense.countDocuments({ group: { $in: groupIds }, deletedAt: null }),
     ]);
-    return { items: items.map(sanitiseExpense), total, page, limit, hasMore: skip + items.length < total };
+    const sanitised = items.map(sanitiseExpense);
+    const reactionMap = await reactionService.summariesByTarget({
+      targetType: 'expense',
+      ids: sanitised.map((e) => e._id),
+    });
+    for (const e of sanitised) e.reactions = reactionMap.get(e._id.toString()) ?? [];
+    return { items: sanitised, total, page, limit, hasMore: skip + items.length < total };
   },
 
   async report({ userId, from, to, groupId }) {

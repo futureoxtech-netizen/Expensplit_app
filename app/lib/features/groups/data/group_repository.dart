@@ -8,7 +8,9 @@ class GroupRepository {
   Future<List<GroupModel>> list() async {
     final res = await _client.get('/groups');
     final data = res['data'] as List;
-    return data.map((j) => GroupModel.fromJson(j as Map<String, dynamic>)).toList();
+    return data
+        .map((j) => GroupModel.fromJson(j as Map<String, dynamic>))
+        .toList();
   }
 
   Future<GroupModel> create({
@@ -59,12 +61,40 @@ class GroupRepository {
   }
 
   Future<GroupModel> addMember(String groupId, String email) async {
-    final res = await _client.post('/groups/$groupId/members', body: {'email': email});
+    final res =
+        await _client.post('/groups/$groupId/members', body: {'email': email});
     return GroupModel.fromJson(res['data'] as Map<String, dynamic>);
   }
 
-  Future<void> leave(String groupId) async {
-    await _client.post('/groups/$groupId/leave');
+  /// Add a "guest" member (someone not on Expensplit) so expenses can be
+  /// split with them. Returns the updated group with the new member.
+  Future<GroupModel> addPlaceholder(String groupId, String name) async {
+    final res = await _client.post(
+      '/groups/$groupId/placeholders',
+      body: {'name': name},
+    );
+    return GroupModel.fromJson(res['data'] as Map<String, dynamic>);
+  }
+
+  /// Remove a member from the group. Used for guests added by mistake; the
+  /// server rejects removal if the member already has expenses/settlements.
+  Future<GroupModel> removeMember(String groupId, String memberId) async {
+    final res = await _client.delete('/groups/$groupId/members/$memberId');
+    return GroupModel.fromJson(res['data'] as Map<String, dynamic>);
+  }
+
+  /// Leave a group. Returns true if leaving dissolved the group entirely
+  /// (you were the last real member), false if it lives on without you.
+  /// Throws if you still have an unsettled balance.
+  Future<bool> leave(String groupId) async {
+    final res = await _client.post('/groups/$groupId/leave');
+    final data = res['data'];
+    return data is Map && data['deleted'] == true;
+  }
+
+  /// Permanently delete a group for everyone. Owner-only on the server.
+  Future<void> deleteGroup(String groupId) async {
+    await _client.delete('/groups/$groupId');
   }
 
   Future<GroupBalances> balances(String groupId) async {

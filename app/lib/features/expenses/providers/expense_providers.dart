@@ -11,25 +11,25 @@ final expenseRepositoryProvider = Provider<ExpenseRepository>(
 
 /// Single-page providers (kept for the dashboard preview which only renders
 /// the first 5 items and doesn't paginate).
-final groupExpensesProvider =
-    FutureProvider.autoDispose.family<ExpensePage, String>((ref, groupId) async {
+final groupExpensesProvider = FutureProvider.autoDispose
+    .family<ExpensePage, String>((ref, groupId) async {
   return ref.watch(expenseRepositoryProvider).listByGroup(groupId);
 });
 
-final expenseFeedProvider = FutureProvider.autoDispose<ExpensePage>((ref) async {
+final expenseFeedProvider =
+    FutureProvider.autoDispose<ExpensePage>((ref) async {
   return ref.watch(expenseRepositoryProvider).feed();
 });
 
-/// Infinite-scroll providers used by the dedicated list screens (group detail
-/// Expenses tab, All-groups feed). Each instance holds its own scroll cursor;
-/// callers invoke `.notifier.loadMore()` from a scroll listener.
-final groupExpensesPagedProvider = StateNotifierProvider.autoDispose.family<
-    PagedListNotifier<ExpenseModel>,
-    PagedListState<ExpenseModel>,
-    String>((ref, groupId) {
+/// Infinite-scroll provider for the group detail "Expenses" tab. Returns a
+/// merged stream of expenses *and* settlement records (see [GroupTxn]) so
+/// recorded payments show up inline, the way Splitwise does it.
+final groupExpensesPagedProvider = StateNotifierProvider.autoDispose
+    .family<PagedListNotifier<GroupTxn>, PagedListState<GroupTxn>, String>(
+        (ref, groupId) {
   final repo = ref.watch(expenseRepositoryProvider);
-  return PagedListNotifier<ExpenseModel>(
-    fetcher: (page, limit) => repo.listByGroupPaged(
+  return PagedListNotifier<GroupTxn>(
+    fetcher: (page, limit) => repo.groupTransactionsPaged(
       groupId,
       page: page,
       limit: limit,

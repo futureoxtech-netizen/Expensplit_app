@@ -100,7 +100,12 @@ class _GoalsScreenState extends ConsumerState<GoalsScreen> {
                   onRetry: () => ref.invalidate(goalsListProvider(_statusFilter)),
                 ),
                 data: (page) =>
-                    page.items.isEmpty ? const SizedBox.shrink() : _StatsHeader(page: page),
+                    page.items.isEmpty
+                        ? const SizedBox.shrink()
+                        : _StatsHeader(
+                            page: page,
+                            currency: ref.watch(authProvider).user?.currency ?? 'PKR',
+                          ),
               ),
             ),
             SliverToBoxAdapter(
@@ -174,8 +179,9 @@ class _GoalsScreenState extends ConsumerState<GoalsScreen> {
 // ─── Stats header ─────────────────────────────────────────────────────────────
 
 class _StatsHeader extends StatelessWidget {
-  const _StatsHeader({required this.page});
+  const _StatsHeader({required this.page, required this.currency});
   final GoalsPage page;
+  final String currency;
 
   @override
   Widget build(BuildContext context) {
@@ -212,7 +218,7 @@ class _StatsHeader extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            Money.format(page.totalSaved),
+            Money.format(page.totalSaved, code: currency),
             style: const TextStyle(
               color: Colors.white,
               fontSize: 32,
@@ -221,7 +227,7 @@ class _StatsHeader extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           Text(
-            'of ${Money.format(page.totalTarget)} total target',
+            'of ${Money.format(page.totalTarget, code: currency)} total target',
             style: const TextStyle(color: Colors.white70, fontSize: 13),
           ),
           const SizedBox(height: 12),
@@ -548,7 +554,7 @@ class _CreateGoalSheetState extends ConsumerState<CreateGoalSheet> {
       // Use the existing goal's currency on edit; on create, default to the
       // user's profile currency so new goals match every other amount the
       // user sees in the app.
-      final userCurrency = ref.read(authProvider).user?.currency ?? 'USD';
+      final userCurrency = ref.read(authProvider).user?.currency ?? 'PKR';
       final currency = widget.existing?.currency ?? userCurrency;
       if (widget.existing == null) {
         await repo.create(
@@ -593,7 +599,7 @@ class _CreateGoalSheetState extends ConsumerState<CreateGoalSheet> {
     final theme = Theme.of(context);
     final isEdit = widget.existing != null;
     final currencyCode =
-        widget.existing?.currency ?? ref.watch(authProvider).user?.currency ?? 'USD';
+        widget.existing?.currency ?? ref.watch(authProvider).user?.currency ?? 'PKR';
     final currencySymbol = Money.symbolOf(currencyCode);
 
     return Padding(

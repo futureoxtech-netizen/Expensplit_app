@@ -13,3 +13,4 @@ ios/Pods/
 *.lock
 android/.gradle/
 android/local.properties
+android/key.properties

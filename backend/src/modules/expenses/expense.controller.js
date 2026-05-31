@@ -24,6 +24,17 @@ export const expenseController = {
     res.json({ ok: true, data });
   }),
 
+  groupTransactions: asyncHandler(async (req, res) => {
+    const { page, limit } = paging.parse(req.query);
+    const data = await expenseService.groupTransactions({
+      userId: req.user.id,
+      groupId: req.params.groupId,
+      page,
+      limit,
+    });
+    res.json({ ok: true, data });
+  }),
+
   getById: asyncHandler(async (req, res) => {
     const expense = await expenseService.getById({ userId: req.user.id, expenseId: req.params.id });
     res.json({ ok: true, data: expense });

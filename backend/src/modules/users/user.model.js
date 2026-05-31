@@ -8,6 +8,14 @@ const userSchema = new mongoose.Schema(
     googleId: { type: String, sparse: true, index: true },
     isEmailVerified: { type: Boolean, default: false },
     avatarUrl: { type: String, default: '' },
+    // Placeholder ("guest") accounts represent people who are split with but
+    // aren't on Expensplit. They have no credentials and can never log in;
+    // they exist only so expenses/balances can reference them like any other
+    // member. `createdBy` is the user who added them; `placeholderGroup` is
+    // the group they belong to (used for cleanup when removed).
+    isPlaceholder: { type: Boolean, default: false },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    placeholderGroup: { type: mongoose.Schema.Types.ObjectId, ref: 'Group' },
     currency: { type: String, default: 'USD' },
     locale: { type: String, default: 'en-US' },
     bio: { type: String, default: '' },
@@ -37,6 +45,7 @@ userSchema.method('toPublic', function toPublic() {
     name: this.name,
     email: this.email,
     avatarUrl: this.avatarUrl,
+    isPlaceholder: this.isPlaceholder ?? false,
     currency: this.currency,
     locale: this.locale,
     bio: this.bio,

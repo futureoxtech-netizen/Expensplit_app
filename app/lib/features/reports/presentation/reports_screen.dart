@@ -75,7 +75,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authProvider).user;
-    final currency = user?.currency ?? 'USD';
+    final currency = user?.currency ?? 'PKR';
     final (from, to, label) = _cachedRange;
     final groupAsync = ref.watch(reportProvider(ReportQuery(from: from, to: to)));
     final personalAsync = (_source != _ReportSource.groups)

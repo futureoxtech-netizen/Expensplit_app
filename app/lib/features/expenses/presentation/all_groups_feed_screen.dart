@@ -11,6 +11,7 @@ import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/gradient_scaffold.dart';
 import '../../../shared/widgets/shimmer_loader.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../reactions/presentation/reaction_editor.dart';
 import '../data/expense_model.dart';
 import '../providers/expense_providers.dart';
 
@@ -47,8 +48,7 @@ class _AllGroupsFeedScreenState extends ConsumerState<AllGroupsFeedScreen> {
     super.initState();
     _scrollListener = PaginatedScrollListener(
       controller: _scrollCtrl,
-      onLoadMore: () =>
-          ref.read(expenseFeedPagedProvider.notifier).loadMore(),
+      onLoadMore: () => ref.read(expenseFeedPagedProvider.notifier).loadMore(),
     );
   }
 
@@ -64,7 +64,7 @@ class _AllGroupsFeedScreenState extends ConsumerState<AllGroupsFeedScreen> {
     final state = ref.watch(expenseFeedPagedProvider);
     final notifier = ref.read(expenseFeedPagedProvider.notifier);
     final user = ref.watch(authProvider).user;
-    final currency = user?.currency ?? 'USD';
+    final currency = user?.currency ?? 'PKR';
     final userId = user?.id ?? '';
 
     // Filter is applied client-side over whatever we've loaded so far.
@@ -164,8 +164,7 @@ class _AllGroupsFeedScreenState extends ConsumerState<AllGroupsFeedScreen> {
 // ─── Category chips ───────────────────────────────────────────────────────────
 
 class _CategoryChips extends StatelessWidget {
-  const _CategoryChips(
-      {required this.selected, required this.onChanged});
+  const _CategoryChips({required this.selected, required this.onChanged});
 
   final String selected;
   final ValueChanged<String> onChanged;
@@ -204,8 +203,7 @@ class _CategoryChips extends StatelessWidget {
             selectedColor: AppColors.primary,
             labelStyle: TextStyle(
               color: isSelected ? Colors.white : null,
-              fontWeight:
-                  isSelected ? FontWeight.w700 : FontWeight.normal,
+              fontWeight: isSelected ? FontWeight.w700 : FontWeight.normal,
               fontSize: 13,
             ),
           );
@@ -273,8 +271,7 @@ class _SummaryCard extends StatelessWidget {
             ),
           ),
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.18),
               borderRadius: BorderRadius.circular(20),
@@ -316,15 +313,16 @@ class _ExpenseTile extends StatelessWidget {
     final groupLabel = expense.groupName ?? '';
     final paidByName = expense.paidBy.name.split(' ').first;
     final subtitle =
-        [if (groupLabel.isNotEmpty) groupLabel, paidByName]
-            .join(' · ');
+        [if (groupLabel.isNotEmpty) groupLabel, paidByName].join(' · ');
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () => context.push('/expenses/${expense.id}'),
-        child: Container(
+    return ReactionEditor(
+      targetType: 'expense',
+      targetId: expense.id,
+      groupId: expense.groupId,
+      reactions: expense.reactions,
+      borderRadius: 16,
+      onTap: () => context.push('/expenses/${expense.id}'),
+      child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
             color: Theme.of(context).cardColor,
@@ -409,7 +407,6 @@ class _ExpenseTile extends StatelessWidget {
             ],
           ),
         ),
-      ),
     );
   }
 }

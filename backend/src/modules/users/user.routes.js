@@ -9,6 +9,7 @@ router.use(requireAuth);
 
 router.get('/me', userController.getMe);
 router.patch('/me', userController.updateMe);
+router.patch('/me/password', userController.changePassword);
 router.delete('/me', userController.deleteMe);
 router.get('/search', userController.search);
 router.post('/me/avatar', uploadMiddleware, userController.uploadAvatar);

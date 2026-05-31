@@ -7,6 +7,7 @@ import settlementRoutes from '../modules/settlements/settlement.routes.js';
 import activityRoutes from '../modules/activity/activity.routes.js';
 import personalRoutes from '../modules/personal/personal.routes.js';
 import goalRoutes from '../modules/goals/goal.routes.js';
+import reactionRoutes from '../modules/reactions/reaction.routes.js';
 
 export const router = Router();
 
@@ -27,3 +28,4 @@ router.use('/settlements', settlementRoutes);
 router.use('/activity', activityRoutes);
 router.use('/personal-expenses', personalRoutes);
 router.use('/goals', goalRoutes);
+router.use('/reactions', reactionRoutes);

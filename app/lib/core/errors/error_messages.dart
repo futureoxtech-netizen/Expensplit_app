@@ -12,7 +12,9 @@ String friendlyError(Object? err) {
 
   // Known internal Failure with server code/message.
   if (err is Failure) {
-    return _byCode(err.code) ?? _byStatus(err.statusCode) ?? _clean(err.message);
+    return _byCode(err.code) ??
+        _byStatus(err.statusCode) ??
+        _clean(err.message);
   }
 
   // Dio errors — translate network + status conditions.
@@ -21,9 +23,9 @@ String friendlyError(Object? err) {
       case DioExceptionType.connectionTimeout:
       case DioExceptionType.sendTimeout:
       case DioExceptionType.receiveTimeout:
-        return 'The server is taking too long to respond. Check your connection.';
+        return 'Please check your internet connection and try again.';
       case DioExceptionType.connectionError:
-        return 'Can\'t reach the server. Please check your internet connection.';
+        return 'Please check your internet connection and try again.';
       case DioExceptionType.badCertificate:
         return 'Secure connection failed. Please try again later.';
       case DioExceptionType.cancel:
@@ -31,9 +33,15 @@ String friendlyError(Object? err) {
       case DioExceptionType.unknown:
       case DioExceptionType.badResponse:
       default:
-        final code = err.response?.data is Map ? err.response?.data['code']?.toString() : null;
-        final msg = err.response?.data is Map ? err.response?.data['message']?.toString() : null;
-        return _byCode(code) ?? _byStatus(err.response?.statusCode) ?? _clean(msg ?? '');
+        final code = err.response?.data is Map
+            ? err.response?.data['code']?.toString()
+            : null;
+        final msg = err.response?.data is Map
+            ? err.response?.data['message']?.toString()
+            : null;
+        return _byCode(code) ??
+            _byStatus(err.response?.statusCode) ??
+            _clean(msg ?? '');
     }
   }
 
@@ -44,16 +52,20 @@ String friendlyError(Object? err) {
 
 /// Show the friendly message as a snackbar, themed to match the app.
 void showErrorSnack(BuildContext context, Object? err, {String? fallback}) {
-  final msg = friendlyError(err).isEmpty ? (fallback ?? 'Something went wrong.') : friendlyError(err);
+  final msg = friendlyError(err).isEmpty
+      ? (fallback ?? 'Something went wrong.')
+      : friendlyError(err);
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
     ..showSnackBar(
       SnackBar(
         content: Row(
           children: [
-            const Icon(Icons.error_outline_rounded, color: Colors.white, size: 20),
+            const Icon(Icons.error_outline_rounded,
+                color: Colors.white, size: 20),
             const SizedBox(width: 10),
-            Expanded(child: Text(msg, style: const TextStyle(color: Colors.white))),
+            Expanded(
+                child: Text(msg, style: const TextStyle(color: Colors.white))),
           ],
         ),
         backgroundColor: AppColors.danger,
@@ -73,9 +85,12 @@ void showSuccessSnack(BuildContext context, String message) {
       SnackBar(
         content: Row(
           children: [
-            const Icon(Icons.check_circle_outline_rounded, color: Colors.white, size: 20),
+            const Icon(Icons.check_circle_outline_rounded,
+                color: Colors.white, size: 20),
             const SizedBox(width: 10),
-            Expanded(child: Text(message, style: const TextStyle(color: Colors.white))),
+            Expanded(
+                child:
+                    Text(message, style: const TextStyle(color: Colors.white))),
           ],
         ),
         backgroundColor: AppColors.accent,
@@ -152,6 +167,7 @@ String? _byStatus(int? code) {
   if (code == 403) return "You don't have permission to do that.";
   if (code == 404) return 'We couldn\'t find what you were looking for.';
   if (code == 429) return 'Too many requests. Slow down and try again.';
-  if (code >= 500) return 'Our server hit a snag. Please try again in a moment.';
+  if (code >= 500)
+    return 'Our server hit a snag. Please try again in a moment.';
   return null;
 }

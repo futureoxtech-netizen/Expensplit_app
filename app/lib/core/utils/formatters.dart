@@ -2,7 +2,7 @@ import 'package:intl/intl.dart';
 
 class Money {
   Money._();
-  static String format(num amount, {String code = 'USD'}) {
+  static String format(num amount, {String code = 'PKR'}) {
     final f = NumberFormat.currency(symbol: symbolOf(code), decimalDigits: 2);
     return f.format(amount);
   }

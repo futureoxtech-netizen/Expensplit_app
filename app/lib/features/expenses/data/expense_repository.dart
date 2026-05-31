@@ -37,7 +37,8 @@ class ExpenseRepository {
     return ExpenseModel.fromJson(res['data'] as Map<String, dynamic>);
   }
 
-  Future<ExpensePage> listByGroup(String groupId, {int page = 1, int limit = 30}) async {
+  Future<ExpensePage> listByGroup(String groupId,
+      {int page = 1, int limit = 30}) async {
     final res = await _client.get(
       '/expenses/group/$groupId',
       query: {'page': page, 'limit': limit},
@@ -54,6 +55,26 @@ class ExpenseRepository {
   }) async {
     final p = await listByGroup(groupId, page: page, limit: limit);
     return PagedResult(items: p.items, hasMore: p.hasMore);
+  }
+
+  /// Merged group activity (expenses + settlement records) for the group
+  /// detail Expenses tab, paginated. Settlements appear inline so a recorded
+  /// payment shows up alongside expenses.
+  Future<PagedResult<GroupTxn>> groupTransactionsPaged(
+    String groupId, {
+    int page = 1,
+    int limit = 30,
+  }) async {
+    final res = await _client.get(
+      '/expenses/group/$groupId/transactions',
+      query: {'page': page, 'limit': limit},
+    );
+    final data = res['data'] as Map<String, dynamic>;
+    final items = ((data['items'] ?? []) as List)
+        .map((j) => parseGroupTxn(j as Map<String, dynamic>))
+        .toList();
+    return PagedResult(
+        items: items, hasMore: (data['hasMore'] as bool?) ?? false);
   }
 
   Future<PagedResult<ExpenseModel>> feedPaged({
@@ -101,13 +122,17 @@ class ExpenseRepository {
   }
 
   Future<ExpensePage> feed({int page = 1, int limit = 30}) async {
-    final res = await _client.get('/expenses/feed', query: {'page': page, 'limit': limit});
+    final res = await _client
+        .get('/expenses/feed', query: {'page': page, 'limit': limit});
     return ExpensePage.fromJson(res['data'] as Map<String, dynamic>);
   }
 
   Future<List<MonthlyCategoryTotal>> analytics({int months = 6}) async {
-    final res = await _client.get('/expenses/analytics', query: {'months': months});
+    final res =
+        await _client.get('/expenses/analytics', query: {'months': months});
     final data = res['data'] as List;
-    return data.map((e) => MonthlyCategoryTotal.fromJson(e as Map<String, dynamic>)).toList();
+    return data
+        .map((e) => MonthlyCategoryTotal.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 }

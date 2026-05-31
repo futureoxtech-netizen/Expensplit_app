@@ -5,8 +5,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../app/router/app_router.dart';
 import '../../features/activity/providers/activity_providers.dart';
+import '../../features/expenses/data/expense_model.dart';
 import '../../features/expenses/providers/expense_providers.dart';
 import '../../features/groups/providers/group_providers.dart';
+import '../../features/reactions/data/reaction_model.dart';
 import '../services/in_app_banner.dart';
 import 'socket_service.dart';
 
@@ -133,9 +135,65 @@ class RealtimeBridge {
       _invalidateFriendCaches(_ref);
     });
 
+    // A reaction was added / switched / removed on an expense or settlement.
+    // Patch the affected row in place (keeps scroll position) rather than
+    // re-fetching the whole list. The payload carries the new summary, and
+    // because it has no per-viewer `mine` flag every client renders correctly.
+    s.on('reaction:changed', (data) {
+      if (data is! Map) return;
+      final groupId = data['groupId']?.toString();
+      final targetType = data['targetType']?.toString();
+      final targetId = data['targetId']?.toString();
+      if (targetId == null) return;
+      final reactions = parseReactions(data['reactions']);
+
+      // Detail screen — cheap single fetch, just refetch.
+      if (targetType == 'expense') {
+        _ref.invalidate(expenseDetailProvider(targetId));
+      }
+
+      // Group activity tab (mixed expenses + settlements).
+      if (groupId != null) {
+        _ref.read(groupExpensesPagedProvider(groupId).notifier).mapWhere(
+          (t) =>
+              (t is ExpenseTxn && t.expense.id == targetId) ||
+              (t is SettlementTxn && t.id == targetId),
+          (t) => switch (t) {
+            ExpenseTxn(:final expense) =>
+              ExpenseTxn(expense.copyWith(reactions: reactions)),
+            SettlementTxn s => s.copyWith(reactions: reactions),
+          },
+        );
+      }
+
+      // Global "all groups" feed.
+      if (targetType == 'expense') {
+        _ref.read(expenseFeedPagedProvider.notifier).mapWhere(
+              (e) => e.id == targetId,
+              (e) => e.copyWith(reactions: reactions),
+            );
+      }
+    });
+
     s.on('group:updated', (_) {
       _ref.invalidate(groupsListProvider);
       // New / removed members reshape the friend list.
+      _invalidateFriendCaches(_ref);
+    });
+
+    s.on('group:deleted', (data) {
+      final groupId = _gid(data);
+      _ref.invalidate(groupsListProvider);
+      if (groupId != null) {
+        _ref.invalidate(groupDetailProvider(groupId));
+        _ref.invalidate(groupBalancesProvider(groupId));
+        _ref.invalidate(groupExpensesPagedProvider(groupId));
+      }
+      // The group's expenses vanish everywhere they were aggregated.
+      _ref.invalidate(expenseFeedProvider);
+      _ref.invalidate(expenseFeedPagedProvider);
+      _ref.invalidate(monthlyAnalyticsProvider);
+      _ref.invalidate(activityFeedProvider);
       _invalidateFriendCaches(_ref);
     });
 
@@ -157,9 +215,22 @@ class RealtimeBridge {
     // yet (e.g. they joined the group during this session).
     s.on('notification:new', (data) {
       final type = data is Map ? data['type']?.toString() : null;
-      final inner = data is Map && data['data'] is Map ? data['data'] as Map : null;
+      final inner =
+          data is Map && data['data'] is Map ? data['data'] as Map : null;
       final groupId = inner?['groupId']?.toString();
       final expenseId = inner?['expenseId']?.toString();
+
+      // Reaction notices are handled by the `reaction:changed` event, which
+      // patches the affected row in place. Re-fetching here would needlessly
+      // reset the list scroll — so just surface the banner and stop.
+      if (type != null && type.startsWith('reaction.')) {
+        if (groupId != null && _joinedGroups.add(groupId)) {
+          SocketService.instance.joinGroup(groupId);
+        }
+        _showBanner(data);
+        return;
+      }
+
       if (groupId != null) {
         // Make sure we're in this room going forward, then invalidate caches.
         if (_joinedGroups.add(groupId)) {
@@ -214,7 +285,10 @@ class RealtimeBridge {
 
     IconData icon;
     Color accent;
-    if (type.startsWith('settlement.')) {
+    if (type.startsWith('reaction.')) {
+      icon = Icons.emoji_emotions_rounded;
+      accent = const Color(0xFFFFC857);
+    } else if (type.startsWith('settlement.')) {
       icon = Icons.payments_rounded;
       accent = const Color(0xFF00B894);
     } else if (type.startsWith('expense.')) {
@@ -248,12 +322,14 @@ class RealtimeBridge {
   }
 
   String? _gid(dynamic data) {
-    if (data is Map && data['groupId'] != null) return data['groupId'].toString();
+    if (data is Map && data['groupId'] != null)
+      return data['groupId'].toString();
     return null;
   }
 
   String? _eid(dynamic data) {
-    if (data is Map && data['expenseId'] != null) return data['expenseId'].toString();
+    if (data is Map && data['expenseId'] != null)
+      return data['expenseId'].toString();
     return null;
   }
 
@@ -268,4 +344,5 @@ class RealtimeBridge {
   }
 }
 
-final realtimeBridgeProvider = Provider<RealtimeBridge>((ref) => RealtimeBridge(ref));
+final realtimeBridgeProvider =
+    Provider<RealtimeBridge>((ref) => RealtimeBridge(ref));

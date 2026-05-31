@@ -47,39 +47,53 @@ class HomeShell extends ConsumerWidget {
     final location = GoRouterState.of(context).matchedLocation;
     final index = _indexOfLocation(location);
     final unread = ref.watch(unreadActivityProvider);
+    final isHome = location == '/home';
 
-    return Scaffold(
-      body: child,
-      bottomNavigationBar: NavigationBar(
-        height: 70,
-        selectedIndex: index,
-        onDestinationSelected: (i) {
-          if (i < _primaryTabs.length) {
-            context.go(_primaryTabs[i].path);
-          } else {
-            _showMoreSheet(context, ref, location);
-          }
-        },
-        destinations: [
-          for (final t in _primaryTabs)
+    // Tabs navigate with `context.go`, which replaces the route rather than
+    // stacking it — so at a tab root the back stack is empty and the system
+    // back button would otherwise exit the app. Intercept that: anywhere
+    // other than the dashboard, back returns to the dashboard first. On the
+    // dashboard (or any genuinely pushed route, where canPop is true) we let
+    // the default behaviour run.
+    return PopScope(
+      canPop: isHome || context.canPop(),
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        context.go('/home');
+      },
+      child: Scaffold(
+        body: child,
+        bottomNavigationBar: NavigationBar(
+          height: 70,
+          selectedIndex: index,
+          onDestinationSelected: (i) {
+            if (i < _primaryTabs.length) {
+              context.go(_primaryTabs[i].path);
+            } else {
+              _showMoreSheet(context, ref, location);
+            }
+          },
+          destinations: [
+            for (final t in _primaryTabs)
+              NavigationDestination(
+                icon: Icon(t.icon, size: 22),
+                selectedIcon: Icon(t.icon, color: AppColors.primary, size: 22),
+                label: t.label,
+              ),
             NavigationDestination(
-              icon: Icon(t.icon, size: 22),
-              selectedIcon: Icon(t.icon, color: AppColors.primary, size: 22),
-              label: t.label,
+              icon: _Badged(
+                count: unread,
+                child: const Icon(Icons.grid_view_rounded, size: 22),
+              ),
+              selectedIcon: _Badged(
+                count: unread,
+                child: const Icon(Icons.grid_view_rounded,
+                    color: AppColors.primary, size: 22),
+              ),
+              label: 'More',
             ),
-          NavigationDestination(
-            icon: _Badged(
-              count: unread,
-              child: const Icon(Icons.grid_view_rounded, size: 22),
-            ),
-            selectedIcon: _Badged(
-              count: unread,
-              child: const Icon(Icons.grid_view_rounded,
-                  color: AppColors.primary, size: 22),
-            ),
-            label: 'More',
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -120,150 +134,149 @@ class _MoreSheet extends ConsumerWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-            // Grip (hidden on wide screens since the dialog has no drag affordance)
-            if (MediaQuery.of(context).size.width < 600)
-              Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(top: 10, bottom: 8),
-                decoration: BoxDecoration(
-                  color: cs.onSurface.withOpacity(0.18),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              )
-            else
-              const SizedBox(height: 8),
-            // Profile header
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(16),
-                onTap: () {
-                  Navigator.pop(context);
-                  context.go('/profile');
-                },
-                child: Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: Row(
-                    children: [
-                      Avatar(
-                        name: user?.name ?? '?',
-                        imageUrl: user?.avatarUrl,
-                        size: 48,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              user?.name ?? '—',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              user?.email ?? '',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: cs.onSurface.withOpacity(0.6),
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(Icons.chevron_right_rounded,
-                          color: cs.onSurface.withOpacity(0.45)),
-                    ],
-                  ),
-                ),
+          // Grip (hidden on wide screens since the dialog has no drag affordance)
+          if (MediaQuery.of(context).size.width < 600)
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(top: 10, bottom: 8),
+              decoration: BoxDecoration(
+                color: cs.onSurface.withOpacity(0.18),
+                borderRadius: BorderRadius.circular(2),
               ),
-            ),
-            Divider(height: 1, color: cs.onSurface.withOpacity(0.08)),
-            // Menu items
-            Flexible(
-              child: ListView(
-                shrinkWrap: true,
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                children: [
-                  _MoreTile(
-                    icon: Icons.flag_rounded,
-                    label: 'Goals',
-                    subtitle: 'Track savings and spend targets',
-                    selected: currentLoc.startsWith('/goals'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      context.go('/goals');
-                    },
-                  ),
-                  _MoreTile(
-                    icon: Icons.notifications_rounded,
-                    label: 'Activity',
-                    subtitle: 'Notifications and recent updates',
-                    selected: currentLoc.startsWith('/activity'),
-                    badgeCount: unread,
-                    onTap: () {
-                      Navigator.pop(context);
-                      context.go('/activity');
-                    },
-                  ),
-                  _MoreTile(
-                    icon: Icons.insights_rounded,
-                    label: 'Reports',
-                    subtitle: 'Monthly insights and category breakdown',
-                    selected: currentLoc.startsWith('/reports'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      context.push('/reports');
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  _SectionLabel('Preferences'),
-                  _MoreTile(
-                    icon: Icons.person_rounded,
-                    label: 'Profile & settings',
-                    subtitle: 'Account, currency and privacy',
-                    selected: currentLoc.startsWith('/profile'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      context.go('/profile');
-                    },
-                  ),
-                  _ThemeTile(
-                    mode: mode,
-                    onChanged: (m) =>
-                        ref.read(themeModeProvider.notifier).set(m),
-                  ),
-                  const SizedBox(height: 16),
-                  // Sign out
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: OutlinedButton.icon(
-                      onPressed: () async {
-                        Navigator.pop(context);
-                        await ref.read(authProvider.notifier).logout();
-                        if (context.mounted) context.go('/login');
-                      },
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.danger,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        side:
-                            BorderSide(color: AppColors.danger.withOpacity(0.5)),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14)),
-                      ),
-                      icon: const Icon(Icons.logout_rounded, size: 18),
-                      label: const Text('Sign out'),
+            )
+          else
+            const SizedBox(height: 8),
+          // Profile header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () {
+                Navigator.pop(context);
+                context.go('/profile');
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Row(
+                  children: [
+                    Avatar(
+                      name: user?.name ?? '?',
+                      imageUrl: user?.avatarUrl,
+                      size: 48,
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            user?.name ?? '—',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            user?.email ?? '',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: cs.onSurface.withOpacity(0.6),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.chevron_right_rounded,
+                        color: cs.onSurface.withOpacity(0.45)),
+                  ],
+                ),
               ),
             ),
-          ],
+          ),
+          Divider(height: 1, color: cs.onSurface.withOpacity(0.08)),
+          // Menu items
+          Flexible(
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              children: [
+                _MoreTile(
+                  icon: Icons.flag_rounded,
+                  label: 'Goals',
+                  subtitle: 'Track savings and spend targets',
+                  selected: currentLoc.startsWith('/goals'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    context.go('/goals');
+                  },
+                ),
+                _MoreTile(
+                  icon: Icons.notifications_rounded,
+                  label: 'Activity',
+                  subtitle: 'Notifications and recent updates',
+                  selected: currentLoc.startsWith('/activity'),
+                  badgeCount: unread,
+                  onTap: () {
+                    Navigator.pop(context);
+                    context.go('/activity');
+                  },
+                ),
+                _MoreTile(
+                  icon: Icons.insights_rounded,
+                  label: 'Reports',
+                  subtitle: 'Monthly insights and category breakdown',
+                  selected: currentLoc.startsWith('/reports'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    context.push('/reports');
+                  },
+                ),
+                const SizedBox(height: 8),
+                _SectionLabel('Preferences'),
+                _MoreTile(
+                  icon: Icons.person_rounded,
+                  label: 'Profile & settings',
+                  subtitle: 'Account, currency and privacy',
+                  selected: currentLoc.startsWith('/profile'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    context.go('/profile');
+                  },
+                ),
+                _ThemeTile(
+                  mode: mode,
+                  onChanged: (m) => ref.read(themeModeProvider.notifier).set(m),
+                ),
+                const SizedBox(height: 16),
+                // Sign out
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      Navigator.pop(context);
+                      await ref.read(authProvider.notifier).logout();
+                      if (context.mounted) context.go('/login');
+                    },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.danger,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      side:
+                          BorderSide(color: AppColors.danger.withOpacity(0.5)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                    ),
+                    icon: const Icon(Icons.logout_rounded, size: 18),
+                    label: const Text('Sign out'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -310,7 +323,8 @@ class _MoreTile extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Material(
-        color: selected ? AppColors.primary.withOpacity(0.10) : Colors.transparent,
+        color:
+            selected ? AppColors.primary.withOpacity(0.10) : Colors.transparent,
         borderRadius: BorderRadius.circular(14),
         child: InkWell(
           borderRadius: BorderRadius.circular(14),

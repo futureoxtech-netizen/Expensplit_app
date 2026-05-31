@@ -22,6 +22,8 @@ import '../../features/auth/data/user_model.dart';
 import '../../features/activity/presentation/activity_screen.dart';
 import '../../features/reports/presentation/reports_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
+import '../../features/profile/presentation/edit_profile_screen.dart';
+import '../../features/profile/presentation/change_password_screen.dart';
 import '../../features/groups/presentation/friends_summary_screen.dart';
 import '../../features/groups/presentation/friend_detail_screen.dart';
 import '../../features/groups/data/friend_summary_model.dart';
@@ -73,7 +75,15 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
-      GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),
+      // Splash uses a plain fade (no zoom/slide) so the handoff to the
+      // app shell is a clean crossfade. The default Android zoom
+      // transition left the outgoing splash logo visibly layered over
+      // the incoming dashboard mid-animation — a half-blurred frame with
+      // an empty band on one side. A fade removes that entirely.
+      GoRoute(
+        path: '/splash',
+        pageBuilder: (_, __) => _fadePage(const SplashScreen()),
+      ),
       GoRoute(path: '/onboarding', builder: (_, __) => const OnboardingScreen()),
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
       GoRoute(path: '/register', builder: (_, __) => const RegisterScreen()),
@@ -112,7 +122,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
 
       ShellRoute(
-        builder: (context, state, child) => HomeShell(child: child),
+        // Fade the shell in so leaving the splash is a smooth crossfade
+        // rather than the OS zoom. Tab switches inside the shell are
+        // child routes and are unaffected by this page transition.
+        pageBuilder: (context, state, child) =>
+            _fadePage(HomeShell(child: child)),
         routes: [
           GoRoute(path: '/home', builder: (_, __) => const DashboardScreen()),
           GoRoute(path: '/groups', builder: (_, __) => const GroupsScreen()),
@@ -162,7 +176,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             groupId: '',
             description: '',
             amount: 0,
-            currency: 'USD',
+            currency: 'PKR',
             category: 'other',
             splitMode: 'equal',
             paidBy: UserModel(id: '', name: '', email: ''),
@@ -170,6 +184,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             spentAt: DateTime.now(),
           ));
         },
+      ),
+      GoRoute(path: '/profile/edit', builder: (_, __) => const EditProfileScreen()),
+      GoRoute(
+        path: '/profile/password',
+        builder: (_, __) => const ChangePasswordScreen(),
       ),
       GoRoute(path: '/reports', builder: (_, __) => const ReportsScreen()),
       GoRoute(
@@ -179,6 +198,19 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
+
+/// A page that crossfades in/out instead of using the platform's
+/// default zoom/slide transition. Used for the splash → app-shell
+/// handoff so the two screens never appear layered mid-animation.
+CustomTransitionPage<void> _fadePage(Widget child) {
+  return CustomTransitionPage<void>(
+    child: child,
+    transitionDuration: const Duration(milliseconds: 300),
+    reverseTransitionDuration: const Duration(milliseconds: 200),
+    transitionsBuilder: (_, animation, __, child) =>
+        FadeTransition(opacity: animation, child: child),
+  );
+}
 
 class _AuthRefresh extends ChangeNotifier {
   _AuthRefresh(Ref ref) {

@@ -17,7 +17,10 @@ router.post('/join', validate(joinByCodeSchema), groupController.joinByCode);
 router.get('/:id', groupController.getById);
 router.patch('/:id', validate(updateGroupSchema), groupController.update);
 router.post('/:id/members', groupController.addMember);
+router.post('/:id/placeholders', groupController.addPlaceholder);
+router.delete('/:id/members/:memberId', groupController.removeMember);
 router.post('/:id/leave', groupController.leave);
+router.delete('/:id', groupController.remove);
 router.get('/:id/balances', groupController.balances);
 
 export default router;

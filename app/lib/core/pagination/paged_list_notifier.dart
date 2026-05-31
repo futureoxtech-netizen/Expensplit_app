@@ -73,7 +73,12 @@ class PagedListNotifier<T> extends StateNotifier<PagedListState<T>> {
   PagedListNotifier({
     required this.fetcher,
     this.limit = 30,
-  }) : super(const PagedListState());
+  }) : super(PagedListState<T>());
+  // NOTE: do NOT use `const PagedListState()` here. `T` is a class-level
+  // (runtime) type parameter, so it cannot be substituted into a const
+  // expression — the compiler silently falls back to `PagedListState<Never>`,
+  // and every later `copyWith(items: List<T>)` throws
+  // `List<X> is not a subtype of List<Never>?`.
 
   final Future<PagedResult<T>> Function(int page, int limit) fetcher;
   final int limit;
@@ -130,7 +135,7 @@ class PagedListNotifier<T> extends StateNotifier<PagedListState<T>> {
   /// been reset yet, so we clear first.
   Future<void> refresh() async {
     _inFlight = false;
-    state = const PagedListState();
+    state = PagedListState<T>();
     await loadFirst();
   }
 
@@ -150,5 +155,25 @@ class PagedListNotifier<T> extends StateNotifier<PagedListState<T>> {
     state = state.copyWith(
       items: [for (final e in cur) if (test(e)) updated else e],
     );
+  }
+
+  /// In-place transform of matching items — like [updateWhere] but the new
+  /// value is derived from the old one (e.g. attaching fresh reactions to an
+  /// existing row). Preserves scroll position because it patches the loaded
+  /// list rather than re-fetching.
+  void mapWhere(bool Function(T) test, T Function(T) transform) {
+    final cur = state.items;
+    if (cur == null) return;
+    var changed = false;
+    final next = [
+      for (final e in cur)
+        if (test(e)) (() {
+            changed = true;
+            return transform(e);
+          })()
+        else
+          e,
+    ];
+    if (changed) state = state.copyWith(items: next);
   }
 }

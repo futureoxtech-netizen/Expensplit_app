@@ -22,7 +22,7 @@ class PersonalExpenseModel {
         id: j['_id'] as String,
         description: j['description'] as String,
         amount: (j['amount'] as num).toDouble(),
-        currency: j['currency'] as String? ?? 'USD',
+        currency: j['currency'] as String? ?? 'PKR',
         category: j['category'] as String? ?? 'other',
         date: DateTime.parse(j['date'] as String),
         note: j['note'] as String? ?? '',

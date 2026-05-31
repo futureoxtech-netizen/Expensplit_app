@@ -135,7 +135,8 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Row(children: [
-            const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+            const Icon(Icons.check_circle_rounded,
+                color: Colors.white, size: 18),
             const SizedBox(width: 10),
             Text(widget.isEdit ? 'Expense updated!' : 'Expense added!'),
           ]),
@@ -146,7 +147,8 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
         context.pop();
       }
     } catch (e) {
-      if (mounted) showErrorSnack(context, e, fallback: 'Could not save expense');
+      if (mounted)
+        showErrorSnack(context, e, fallback: 'Could not save expense');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -159,7 +161,8 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     final me = ref.watch(authProvider).user;
 
     return Scaffold(
-      appBar: AppBar(title: Text(widget.isEdit ? 'Edit expense' : 'Add expense')),
+      appBar:
+          AppBar(title: Text(widget.isEdit ? 'Edit expense' : 'Add expense')),
       body: SafeArea(
         child: groupAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
@@ -185,11 +188,13 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                   controller: _amount,
                   label: 'Amount (${group.currency})',
                   prefixText: Money.symbolOf(group.currency),
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
                   onChanged: (_) => setState(() {}),
                 ),
                 const SizedBox(height: 14),
-                const Text('Category', style: TextStyle(fontWeight: FontWeight.w600)),
+                const Text('Category',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
                 SizedBox(
                   height: 40,
@@ -197,9 +202,17 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                     scrollDirection: Axis.horizontal,
                     children: [
                       for (final c in [
-                        'food', 'groceries', 'transport', 'shopping',
-                        'rent', 'utilities', 'entertainment', 'travel',
-                        'health', 'gifts', 'other',
+                        'food',
+                        'groceries',
+                        'transport',
+                        'shopping',
+                        'rent',
+                        'utilities',
+                        'entertainment',
+                        'travel',
+                        'health',
+                        'gifts',
+                        'other',
                       ])
                         Padding(
                           padding: const EdgeInsets.only(right: 8),
@@ -213,7 +226,8 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                   ),
                 ),
                 const SizedBox(height: 18),
-                const Text('Paid by', style: TextStyle(fontWeight: FontWeight.w600)),
+                const Text('Paid by',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
                 SizedBox(
                   height: 80,
@@ -232,12 +246,17 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 border: Border.all(
-                                  color: selected ? AppColors.primary : Colors.transparent,
+                                  color: selected
+                                      ? AppColors.primary
+                                      : Colors.transparent,
                                   width: 3,
                                 ),
                               ),
                               padding: const EdgeInsets.all(2),
-                              child: Avatar(name: u.name, imageUrl: u.avatarUrl, size: 44),
+                              child: Avatar(
+                                  name: u.name,
+                                  imageUrl: u.avatarUrl,
+                                  size: 44),
                             ),
                             const SizedBox(height: 4),
                             SizedBox(
@@ -249,7 +268,9 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   fontSize: 11,
-                                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                                  fontWeight: selected
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
                                 ),
                               ),
                             ),
@@ -260,7 +281,8 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                   ),
                 ),
                 const SizedBox(height: 18),
-                const Text('Split mode', style: TextStyle(fontWeight: FontWeight.w600)),
+                const Text('Split mode',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
@@ -278,11 +300,15 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                   _splitModeHelp(),
                   style: TextStyle(
                     fontSize: 12,
-                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withOpacity(0.6),
                   ),
                 ),
                 const SizedBox(height: 14),
-                const Text('Participants', style: TextStyle(fontWeight: FontWeight.w600)),
+                const Text('Participants',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
                 ..._buildParticipantRows(members, amount, group.currency),
                 if (_splitMode != 'equal')
@@ -327,7 +353,8 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     }
   }
 
-  List<Widget> _buildParticipantRows(List<UserModel> members, double total, String currency) {
+  List<Widget> _buildParticipantRows(
+      List<UserModel> members, double total, String currency) {
     return [
       for (final u in members)
         Container(
@@ -356,7 +383,9 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                 child: Text(u.name.isEmpty ? u.email : u.name,
                     style: const TextStyle(fontWeight: FontWeight.w600)),
               ),
-              if (_splitMode == 'equal' && _participants.contains(u.id) && total > 0)
+              if (_splitMode == 'equal' &&
+                  _participants.contains(u.id) &&
+                  total > 0)
                 Text(
                   Money.format(total / _participants.length, code: currency),
                   style: const TextStyle(fontWeight: FontWeight.w700),
@@ -366,13 +395,19 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                   width: 92,
                   child: TextField(
                     controller: _ctrlFor(u.id),
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))
+                    ],
                     textAlign: TextAlign.right,
                     decoration: InputDecoration(
                       isDense: true,
-                      hintText: _splitMode == 'percent' ? '%' : (_splitMode == 'shares' ? 'shares' : '0.00'),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                      hintText: _splitMode == 'percent'
+                          ? '%'
+                          : (_splitMode == 'shares' ? 'shares' : '0.00'),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 8),
                     ),
                     onChanged: (_) => setState(() {}),
                   ),
@@ -398,10 +433,14 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
       color = diff < 0.01 ? AppColors.accent : AppColors.danger;
     } else if (_splitMode == 'percent') {
       final diff = (sum - 100).abs();
-      label = diff < 0.01 ? 'Sums to 100% ✓' : 'Currently ${sum.toStringAsFixed(1)}%';
+      label = diff < 0.01
+          ? 'Sums to 100% ✓'
+          : 'Currently ${sum.toStringAsFixed(1)}%';
       color = diff < 0.01 ? AppColors.accent : AppColors.danger;
     } else {
-      label = sum > 0 ? 'Total weight: ${sum.toStringAsFixed(0)}' : 'Add at least one share';
+      label = sum > 0
+          ? 'Total weight: ${sum.toStringAsFixed(0)}'
+          : 'Add at least one share';
       color = sum > 0 ? AppColors.accent : AppColors.danger;
     }
     return Container(
@@ -414,7 +453,8 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
         children: [
           Icon(Icons.summarize_rounded, color: color, size: 18),
           const SizedBox(width: 8),
-          Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w700)),
+          Text(label,
+              style: TextStyle(color: color, fontWeight: FontWeight.w700)),
         ],
       ),
     );

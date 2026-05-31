@@ -51,7 +51,7 @@ class ReportItem {
       id: (j['_id'] ?? j['id']).toString(),
       description: j['description']?.toString() ?? '',
       amount: (j['amount'] as num).toDouble(),
-      currency: j['currency']?.toString() ?? 'USD',
+      currency: j['currency']?.toString() ?? 'PKR',
       category: j['category']?.toString() ?? 'other',
       paidBy: paid is Map ? paid['name']?.toString() ?? '' : '',
       groupName: group is Map ? group['name']?.toString() ?? '' : '',

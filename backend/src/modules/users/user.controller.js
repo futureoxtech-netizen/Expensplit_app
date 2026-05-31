@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import bcrypt from 'bcryptjs';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { User } from './user.model.js';
 import { Group } from '../groups/group.model.js';
@@ -19,6 +20,11 @@ const updateSchema = z.object({
   bio: z.string().max(280).optional(),
 });
 
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8).max(128),
+});
+
 export const userController = {
   getMe: asyncHandler(async (req, res) => {
     const user = await User.findById(req.user.id);
@@ -32,10 +38,47 @@ export const userController = {
     res.json({ ok: true, data: user.toPublic() });
   }),
 
+  // PATCH /users/me/password — change password while logged in.
+  // Verifies the current password before setting the new one. Google-only
+  // accounts (no passwordHash) are rejected with a clear, actionable code.
+  changePassword: asyncHandler(async (req, res) => {
+    const { currentPassword, newPassword } = changePasswordSchema.parse(req.body);
+
+    // passwordHash is `select: false`, so load it explicitly.
+    const user = await User.findById(req.user.id).select('+passwordHash');
+    if (!user) throw NotFound('User not found');
+
+    if (!user.passwordHash) {
+      throw BadRequest(
+        'This account signs in with Google and has no password to change.',
+        'USE_GOOGLE',
+      );
+    }
+
+    const matches = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!matches) throw BadRequest('Your current password is incorrect.', 'WRONG_PASSWORD');
+
+    const sameAsOld = await bcrypt.compare(newPassword, user.passwordHash);
+    if (sameAsOld) {
+      throw BadRequest(
+        'Your new password must be different from your current one.',
+        'SAME_PASSWORD',
+      );
+    }
+
+    user.passwordHash = await bcrypt.hash(newPassword, 10);
+    await user.save();
+
+    // Note: we intentionally keep existing refresh tokens valid so the user
+    // stays signed in on this device after changing their password.
+    res.json({ ok: true, message: 'Password updated successfully' });
+  }),
+
   search: asyncHandler(async (req, res) => {
     const q = String(req.query.q || '').trim();
     if (q.length < 2) return res.json({ ok: true, data: [] });
     const users = await User.find({
+      isPlaceholder: { $ne: true },
       $or: [
         { name: { $regex: q, $options: 'i' } },
         { email: { $regex: q, $options: 'i' } },
@@ -92,18 +135,25 @@ export const userController = {
     const userId = req.user.id.toString();
 
     const groups = await Group.find({ 'members.user': userId, archived: false })
-      .populate('members.user', 'name email avatarUrl')
+      .populate('members.user', 'name email avatarUrl isPlaceholder')
       .lean();
 
     const netByFriend = new Map();    // friendId -> total net amount
     const friendUserMap = new Map();  // friendId -> user object
     const groupsByFriend = new Map(); // friendId -> [{groupId, groupName, net}]
+    const placeholderIds = new Set(); // guest members — excluded from Friends
 
     for (const group of groups) {
       // Collect friend info from members
       for (const m of group.members) {
         if (!m.user) continue; // user deleted their account
         const mid = (m.user._id ?? m.user).toString();
+        // Guests (placeholders) live inside group balances, not the global
+        // Friends list — track them so we can drop them from the result.
+        if (m.user.isPlaceholder) {
+          placeholderIds.add(mid);
+          continue;
+        }
         if (mid !== userId && m.user.name && !friendUserMap.has(mid)) {
           friendUserMap.set(mid, m.user);
         }
@@ -163,6 +213,7 @@ export const userController = {
     }
 
     const result = [...netByFriend.entries()]
+      .filter(([friendId]) => !placeholderIds.has(friendId))
       .map(([friendId, net]) => {
         const u = friendUserMap.get(friendId);
         return {

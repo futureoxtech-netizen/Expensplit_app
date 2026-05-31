@@ -24,7 +24,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _passwordCtrl = TextEditingController();
   bool _obscure = true;
   bool _loading = false;
-  String _currency = 'USD';
+  String _currency = 'PKR';
 
   @override
   void dispose() {
@@ -128,7 +128,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 items: const ['USD', 'EUR', 'GBP', 'INR', 'PKR', 'JPY', 'CAD', 'AUD']
                     .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                     .toList(),
-                onChanged: (v) => setState(() => _currency = v ?? 'USD'),
+                onChanged: (v) => setState(() => _currency = v ?? 'PKR'),
               ),
             ),
             const SizedBox(height: 24),

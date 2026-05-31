@@ -36,7 +36,7 @@ class GroupModel {
         category: j['category'] ?? 'other',
         coverColor: j['coverColor'] ?? '#6C5CE7',
         icon: j['icon'] ?? 'group',
-        currency: j['currency'] ?? 'USD',
+        currency: j['currency'] ?? 'PKR',
         inviteCode: j['inviteCode'] ?? '',
         members: ((j['members'] ?? []) as List)
             .map((m) => GroupMember.fromJson(m as Map<String, dynamic>))

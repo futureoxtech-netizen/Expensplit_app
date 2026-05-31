@@ -37,6 +37,25 @@ export const groupController = {
     res.json({ ok: true, data: group });
   }),
 
+  addPlaceholder: asyncHandler(async (req, res) => {
+    const name = z.string().min(1).max(80).parse(req.body?.name);
+    const group = await groupService.addPlaceholderMember({
+      userId: req.user.id,
+      groupId: req.params.id,
+      name,
+    });
+    res.status(201).json({ ok: true, data: group });
+  }),
+
+  removeMember: asyncHandler(async (req, res) => {
+    const group = await groupService.removeMember({
+      userId: req.user.id,
+      groupId: req.params.id,
+      memberId: req.params.memberId,
+    });
+    res.json({ ok: true, data: group });
+  }),
+
   joinByCode: asyncHandler(async (req, res) => {
     const group = await groupService.joinByCode({ userId: req.user.id, code: req.body.code });
     res.json({ ok: true, data: group });
@@ -44,6 +63,11 @@ export const groupController = {
 
   leave: asyncHandler(async (req, res) => {
     const result = await groupService.leave({ userId: req.user.id, groupId: req.params.id });
+    res.json({ ok: true, data: result });
+  }),
+
+  remove: asyncHandler(async (req, res) => {
+    const result = await groupService.deleteGroup({ userId: req.user.id, groupId: req.params.id });
     res.json({ ok: true, data: result });
   }),
 

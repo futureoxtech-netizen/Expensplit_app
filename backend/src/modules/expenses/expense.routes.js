@@ -12,6 +12,7 @@ router.get('/feed', expenseController.feed);
 router.get('/analytics', expenseController.analytics);
 router.get('/report', expenseController.report);
 router.get('/group/:groupId', expenseController.listByGroup);
+router.get('/group/:groupId/transactions', expenseController.groupTransactions);
 router.get('/:id', expenseController.getById);
 router.patch('/:id', validate(updateExpenseSchema), expenseController.update);
 router.delete('/:id', expenseController.remove);

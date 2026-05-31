@@ -9,6 +9,7 @@ import '../../../shared/widgets/avatar.dart';
 import '../../../shared/widgets/category_icon.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../groups/providers/group_providers.dart';
+import '../../reactions/presentation/reaction_editor.dart';
 import '../providers/expense_providers.dart';
 
 class ExpenseDetailScreen extends ConsumerWidget {
@@ -31,12 +32,14 @@ class ExpenseDetailScreen extends ConsumerWidget {
                 IconButton(
                   icon: const Icon(Icons.edit_rounded),
                   tooltip: 'Edit',
-                  onPressed: () => context.push('/expenses/${e.id}/edit', extra: e),
+                  onPressed: () =>
+                      context.push('/expenses/${e.id}/edit', extra: e),
                 ),
                 IconButton(
                   icon: const Icon(Icons.delete_outline_rounded),
                   tooltip: 'Delete',
-                  onPressed: () => _confirmDelete(context, ref, e.id, e.groupId),
+                  onPressed: () =>
+                      _confirmDelete(context, ref, e.id, e.groupId),
                 ),
               ],
             ),
@@ -59,12 +62,16 @@ class ExpenseDetailScreen extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(e.description,
-                          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                          style: const TextStyle(
+                              fontSize: 20, fontWeight: FontWeight.w800)),
                       const SizedBox(height: 4),
                       Text(
                         DateFmt.medium(e.spentAt),
                         style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withOpacity(0.6),
                         ),
                       ),
                     ],
@@ -116,11 +123,15 @@ class ExpenseDetailScreen extends ConsumerWidget {
                 ),
                 child: Row(
                   children: [
-                    Avatar(name: s.user.name, imageUrl: s.user.avatarUrl, size: 32),
+                    Avatar(
+                        name: s.user.name,
+                        imageUrl: s.user.avatarUrl,
+                        size: 32),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        s.user.name + (me != null && me.id == s.user.id ? ' (you)' : ''),
+                        s.user.name +
+                            (me != null && me.id == s.user.id ? ' (you)' : ''),
                         style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
                     ),
@@ -133,10 +144,29 @@ class ExpenseDetailScreen extends ConsumerWidget {
               ),
             if (e.notes.isNotEmpty) ...[
               const SizedBox(height: 16),
-              const Text('Notes', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+              const Text('Notes',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
               const SizedBox(height: 8),
               Text(e.notes),
             ],
+            const SizedBox(height: 20),
+            const Text('Reactions',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 2),
+            Text(
+              'Tap to react · long-press a reaction to see who',
+              style: TextStyle(
+                fontSize: 11,
+                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+              ),
+            ),
+            const SizedBox(height: 10),
+            ReactionEditor(
+              targetType: 'expense',
+              targetId: e.id,
+              groupId: e.groupId,
+              reactions: e.reactions,
+            ),
           ],
         ),
       ),
@@ -155,7 +185,9 @@ class ExpenseDetailScreen extends ConsumerWidget {
         title: const Text('Delete expense?'),
         content: const Text('This cannot be undone.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
             onPressed: () => Navigator.pop(ctx, true),
@@ -173,7 +205,8 @@ class ExpenseDetailScreen extends ConsumerWidget {
       ref.invalidate(expenseFeedProvider);
       if (context.mounted) context.pop();
     } catch (e) {
-      if (context.mounted) showErrorSnack(context, e, fallback: 'Could not delete expense');
+      if (context.mounted)
+        showErrorSnack(context, e, fallback: 'Could not delete expense');
     }
   }
 }

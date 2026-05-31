@@ -27,7 +27,7 @@ class _FriendsSummaryScreenState extends ConsumerState<FriendsSummaryScreen> {
   Widget build(BuildContext context) {
     final async = ref.watch(friendsSummaryProvider);
     final user = ref.watch(authProvider).user;
-    final currency = user?.currency ?? 'USD';
+    final currency = user?.currency ?? 'PKR';
     final theme = Theme.of(context);
 
     return Scaffold(

@@ -19,6 +19,8 @@ import '../../../shared/widgets/shimmer_loader.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../expenses/data/expense_model.dart';
 import '../../expenses/providers/expense_providers.dart';
+import '../../reactions/data/reaction_model.dart';
+import '../../reactions/presentation/reaction_editor.dart';
 import '../../settlements/providers/settlement_providers.dart';
 import '../data/group_model.dart';
 import '../providers/group_providers.dart';
@@ -54,8 +56,53 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
     final groupAsync = ref.watch(groupDetailProvider(widget.groupId));
 
     return groupAsync.when(
-      loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (e, _) => Scaffold(body: Center(child: Text(friendlyError(e)))),
+      loading: () =>
+          const Scaffold(body: Center(child: CircularProgressIndicator())),
+      error: (e, _) => Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded),
+            onPressed: () =>
+                context.canPop() ? context.pop() : context.go('/groups'),
+          ),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.error_outline_rounded, size: 40),
+                const SizedBox(height: 12),
+                // When a group is deleted out from under you, the fetch 404s.
+                // Give a clear message and a way back instead of a dead end.
+                Text(
+                  friendlyError(e),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'This group may have been deleted.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withOpacity(0.6),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                FilledButton(
+                  onPressed: () => context.go('/groups'),
+                  child: const Text('Back to groups'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
       data: (group) {
         final color = _parseColor(group.coverColor) ?? AppColors.primary;
         return Scaffold(
@@ -102,7 +149,8 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
             backgroundColor: color,
             onPressed: () => context.push('/groups/${group.id}/expenses/new'),
             icon: const Icon(Icons.add, color: Colors.white),
-            label: const Text('Add expense', style: TextStyle(color: Colors.white)),
+            label: const Text('Add expense',
+                style: TextStyle(color: Colors.white)),
           ),
           body: TabBarView(
             controller: _tab,
@@ -276,8 +324,8 @@ class _InviteSheet extends StatelessWidget {
                     },
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
-                      side: BorderSide(
-                          color: AppColors.primary.withOpacity(0.4)),
+                      side:
+                          BorderSide(color: AppColors.primary.withOpacity(0.4)),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14)),
                     ),
@@ -357,7 +405,7 @@ class _ExpensesTabState extends ConsumerState<_ExpensesTab> {
         controller: _scrollCtrl,
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
-          PagedSliverList<ExpenseModel>(
+          PagedSliverList<GroupTxn>(
             state: state,
             onLoadFirst: notifier.loadFirst,
             onRetryMore: notifier.loadMore,
@@ -372,22 +420,28 @@ class _ExpensesTabState extends ConsumerState<_ExpensesTab> {
               padding: EdgeInsets.only(top: 100),
               child: EmptyState(
                 icon: Icons.receipt_long_rounded,
-                title: 'No expenses yet',
+                title: 'No activity yet',
                 subtitle: 'Tap "Add expense" to record your first one.',
               ),
             ),
             separator: const SizedBox(height: 10),
-            itemBuilder: (ctx, e, _) {
-              final myShare = e.shares
-                  .where((s) => s.user.id == me?.id)
-                  .fold<double>(0, (a, s) => a + s.amount);
-              final iPaid = me != null && e.paidBy.id == me.id;
-              return _ExpenseRow(
-                expense: e,
-                myShare: myShare,
-                iPaid: iPaid,
-                onTap: () => GoRouter.of(context).push('/expenses/${e.id}'),
-              );
+            itemBuilder: (ctx, txn, _) {
+              switch (txn) {
+                case ExpenseTxn(:final expense):
+                  final myShare = expense.shares
+                      .where((s) => s.user.id == me?.id)
+                      .fold<double>(0, (a, s) => a + s.amount);
+                  final iPaid = me != null && expense.paidBy.id == me.id;
+                  return _ExpenseRow(
+                    expense: expense,
+                    myShare: myShare,
+                    iPaid: iPaid,
+                    onTap: () =>
+                        GoRouter.of(context).push('/expenses/${expense.id}'),
+                  );
+                case SettlementTxn s:
+                  return _SettlementRow(txn: s, meId: me?.id);
+              }
             },
           ),
         ],
@@ -409,8 +463,12 @@ class _BalancesTab extends ConsumerWidget {
     return RefreshIndicator(
       onRefresh: () async => ref.invalidate(groupBalancesProvider(group.id)),
       child: async.when(
-        loading: () => const Padding(padding: EdgeInsets.all(16), child: ShimmerLoader()),
-        error: (e, _) => ListView(children: [Padding(padding: const EdgeInsets.all(20), child: Text(friendlyError(e)))]),
+        loading: () =>
+            const Padding(padding: EdgeInsets.all(16), child: ShimmerLoader()),
+        error: (e, _) => ListView(children: [
+          Padding(
+              padding: const EdgeInsets.all(20), child: Text(friendlyError(e)))
+        ]),
         data: (b) {
           if (b.balances.every((x) => x.net.abs() < 0.01)) {
             return ListView(
@@ -491,8 +549,14 @@ class _BalancesTab extends ConsumerWidget {
                       if (me != null && (t.from == me.id || t.to == me.id))
                         ElevatedButton(
                           onPressed: () => _showGroupSettleSheet(
-                              context, ref, t.from, t.to, t.amount, group,
-                              t.fromUser?.name, t.toUser?.name),
+                              context,
+                              ref,
+                              t.from,
+                              t.to,
+                              t.amount,
+                              group,
+                              t.fromUser?.name,
+                              t.toUser?.name),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.white,
                             foregroundColor: AppColors.primary,
@@ -519,8 +583,8 @@ class _BalancesTab extends ConsumerWidget {
     String? fromName,
     String? toName,
   ) async {
-    final ctrl = TextEditingController(
-        text: suggestedAmount.toStringAsFixed(2));
+    final ctrl =
+        TextEditingController(text: suggestedAmount.toStringAsFixed(2));
     final entered = await showModalBottomSheet<double>(
       context: context,
       isScrollControlled: true,
@@ -532,7 +596,9 @@ class _BalancesTab extends ConsumerWidget {
         builder: (ctx, setState) => Padding(
           padding: EdgeInsets.only(
               bottom: MediaQuery.of(ctx).viewInsets.bottom,
-              left: 20, right: 20, top: 20),
+              left: 20,
+              right: 20,
+              top: 20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -540,8 +606,8 @@ class _BalancesTab extends ConsumerWidget {
               Row(
                 children: [
                   const Text('Settle up',
-                      style: TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.w800)),
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
                   const Spacer(),
                   IconButton(
                       icon: const Icon(Icons.close),
@@ -552,21 +618,20 @@ class _BalancesTab extends ConsumerWidget {
               Text(
                 '${fromName ?? 'Someone'} → ${toName ?? 'Someone'}',
                 style: const TextStyle(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w600),
+                    color: AppColors.primary, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: ctrl,
-                keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
                 decoration: InputDecoration(
                   labelText: 'Amount',
                   prefixText: '${group.currency} ',
                   border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10)),
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 14),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                 ),
               ),
               const SizedBox(height: 16),
@@ -576,9 +641,8 @@ class _BalancesTab extends ConsumerWidget {
                   onPressed: () {
                     final entered = double.tryParse(ctrl.text.trim());
                     if (entered == null || entered <= 0) {
-                      ScaffoldMessenger.of(ctx).showSnackBar(
-                          const SnackBar(
-                              content: Text('Enter a valid amount')));
+                      ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+                          content: Text('Enter a valid amount')));
                       return;
                     }
                     Navigator.pop(ctx, entered);
@@ -623,6 +687,7 @@ class _BalancesTab extends ConsumerWidget {
           );
       ref.invalidate(groupBalancesProvider(group.id));
       ref.invalidate(groupExpensesProvider(group.id));
+      ref.invalidate(groupExpensesPagedProvider(group.id));
       if (context.mounted) {
         showModalBottomSheet(
           context: context,
@@ -648,8 +713,8 @@ class _BalancesTab extends ConsumerWidget {
                 ),
                 const SizedBox(height: 20),
                 const Text('Settlement Recorded!',
-                    style: TextStyle(
-                        fontSize: 22, fontWeight: FontWeight.w800)),
+                    style:
+                        TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 8),
                 Text(
                   Money.format(amount, code: group.currency),
@@ -661,9 +726,7 @@ class _BalancesTab extends ConsumerWidget {
                 const SizedBox(height: 4),
                 Text(
                   'has been recorded as settled',
-                  style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey.shade600),
+                  style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
                 ),
                 const SizedBox(height: 28),
                 SizedBox(
@@ -687,7 +750,8 @@ class _BalancesTab extends ConsumerWidget {
         );
       }
     } catch (e) {
-      if (context.mounted) showErrorSnack(context, e, fallback: 'Could not record payment');
+      if (context.mounted)
+        showErrorSnack(context, e, fallback: 'Could not record payment');
     }
   }
 }
@@ -699,6 +763,7 @@ class _MembersTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
       children: [
@@ -719,30 +784,68 @@ class _MembersTab extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(m.user.name.isEmpty ? m.user.email : m.user.name,
+                      Text(m.user.name.isEmpty ? 'Guest' : m.user.name,
                           style: const TextStyle(fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 2),
                       Text(
-                        m.user.email,
+                        // A guest's email is a synthetic placeholder address —
+                        // never show it. Show what they actually are instead.
+                        m.user.isPlaceholder
+                            ? 'Guest · not on Expensplit'
+                            : m.user.email,
                         style: TextStyle(
                           fontSize: 12,
-                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                          color: cs.onSurface.withOpacity(0.6),
                         ),
                       ),
                     ],
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: groupColor.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(8),
+                if (m.user.isPlaceholder)
+                  Container(
+                    margin: const EdgeInsets.only(right: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: cs.onSurface.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.person_off_rounded,
+                            size: 11, color: cs.onSurface.withOpacity(0.6)),
+                        const SizedBox(width: 4),
+                        Text('Guest',
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: cs.onSurface.withOpacity(0.6))),
+                      ],
+                    ),
+                  )
+                else
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: groupColor.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(m.role,
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: groupColor)),
                   ),
-                  child: Text(m.role,
-                      style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: groupColor)),
-                ),
+                if (m.user.isPlaceholder)
+                  IconButton(
+                    tooltip: 'Remove guest',
+                    visualDensity: VisualDensity.compact,
+                    icon: Icon(Icons.close_rounded,
+                        size: 18, color: cs.onSurface.withOpacity(0.5)),
+                    onPressed: () => _removeMember(context, ref, m),
+                  ),
               ],
             ),
           ),
@@ -757,8 +860,81 @@ class _MembersTab extends ConsumerWidget {
           ),
           onPressed: () => _invite(context, ref),
         ),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: () => _addGuest(context, ref),
+          icon: const Icon(Icons.person_add_disabled_rounded, size: 18),
+          label: const Text('Add someone not on the app'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: cs.onSurface,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            side: BorderSide(color: cs.onSurface.withOpacity(0.18)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          'Guests let you split with people who aren\'t on Expensplit yet. '
+          'They appear in this group\'s balances; settle with them in person.',
+          style: TextStyle(fontSize: 12, color: cs.onSurface.withOpacity(0.5)),
+        ),
       ],
     );
+  }
+
+  Future<void> _addGuest(BuildContext context, WidgetRef ref) async {
+    final name = await showDialog<String>(
+      context: context,
+      builder: (_) => _AddGuestDialog(groupColor: groupColor),
+    );
+    if (name == null || name.trim().isEmpty) return;
+    try {
+      await ref
+          .read(groupRepositoryProvider)
+          .addPlaceholder(group.id, name.trim());
+      ref.invalidate(groupDetailProvider(group.id));
+      if (context.mounted)
+        showSuccessSnack(context, 'Added $name to "${group.name}"');
+    } catch (e) {
+      if (context.mounted)
+        showErrorSnack(context, e, fallback: 'Could not add guest');
+    }
+  }
+
+  Future<void> _removeMember(
+      BuildContext context, WidgetRef ref, GroupMember m) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Remove guest?'),
+        content: Text(
+          'Remove ${m.user.name.isEmpty ? 'this guest' : m.user.name} from "${group.name}"? '
+          'This is only possible while they have no expenses in the group.',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await ref.read(groupRepositoryProvider).removeMember(group.id, m.user.id);
+      ref.invalidate(groupDetailProvider(group.id));
+      ref.invalidate(groupBalancesProvider(group.id));
+      if (context.mounted) showSuccessSnack(context, 'Guest removed');
+    } catch (e) {
+      if (context.mounted)
+        showErrorSnack(context, e, fallback: 'Could not remove guest');
+    }
   }
 
   Future<void> _invite(BuildContext context, WidgetRef ref) async {
@@ -779,17 +955,170 @@ class _MembersTab extends ConsumerWidget {
     try {
       await ref.read(groupRepositoryProvider).addMember(group.id, email);
       ref.invalidate(groupDetailProvider(group.id));
-      if (context.mounted) showSuccessSnack(context, 'Member added to "${group.name}"');
+      if (context.mounted)
+        showSuccessSnack(context, 'Member added to "${group.name}"');
     } catch (e) {
-      if (context.mounted) showErrorSnack(context, e, fallback: 'Could not invite member');
+      if (context.mounted)
+        showErrorSnack(context, e, fallback: 'Could not invite member');
     }
+  }
+}
+
+/// Dialog that collects a guest's name and returns it via Navigator.pop.
+/// Used to add a placeholder member who isn't on Expensplit.
+class _AddGuestDialog extends StatefulWidget {
+  const _AddGuestDialog({required this.groupColor});
+  final Color groupColor;
+
+  @override
+  State<_AddGuestDialog> createState() => _AddGuestDialogState();
+}
+
+class _AddGuestDialogState extends State<_AddGuestDialog> {
+  final _ctrl = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    Navigator.of(context).pop(_ctrl.text.trim());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final color = widget.groupColor;
+    return Dialog(
+      backgroundColor: cs.surface,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 66,
+                height: 66,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [color, Color.lerp(color, Colors.white, 0.25)!],
+                  ),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: color.withOpacity(0.32),
+                      blurRadius: 18,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.person_add_alt_1_rounded,
+                    color: Colors.white, size: 32),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Add a guest',
+                style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Add someone who isn’t on Expensplit so you can split with '
+                'them. You can settle with them in person.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13.5,
+                  height: 1.45,
+                  color: cs.onSurface.withOpacity(0.65),
+                ),
+              ),
+              const SizedBox(height: 20),
+              TextFormField(
+                controller: _ctrl,
+                autofocus: true,
+                textCapitalization: TextCapitalization.words,
+                textInputAction: TextInputAction.done,
+                onFieldSubmitted: (_) => _submit(),
+                decoration: InputDecoration(
+                  labelText: 'Name',
+                  hintText: 'e.g. Sara',
+                  prefixIcon:
+                      Icon(Icons.person_outline_rounded, color: color),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: cs.onSurface.withOpacity(0.15)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: cs.onSurface.withOpacity(0.15)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: color, width: 1.6),
+                  ),
+                ),
+                validator: (v) {
+                  final t = (v ?? '').trim();
+                  if (t.isEmpty) return 'Enter a name';
+                  if (t.length > 80) return 'Name is too long';
+                  return null;
+                },
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        side: BorderSide(color: cs.onSurface.withOpacity(0.18)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: const Text('Cancel',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _submit,
+                      icon: const Icon(Icons.add_rounded, size: 18),
+                      label: const Text('Add',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: color,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
 /// Bottom sheet that collects an email and returns it via Navigator.pop.
 /// Returns null when the user dismisses without confirming.
 class _InviteByEmailSheet extends StatefulWidget {
-  const _InviteByEmailSheet({required this.groupName, required this.groupColor});
+  const _InviteByEmailSheet(
+      {required this.groupName, required this.groupColor});
   final String groupName;
   final Color groupColor;
 
@@ -825,7 +1154,8 @@ class _InviteByEmailSheetState extends State<_InviteByEmailSheet> {
     final cs = Theme.of(context).colorScheme;
     final color = widget.groupColor;
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 12, 24, 28),
@@ -907,14 +1237,17 @@ class _InviteByEmailSheetState extends State<_InviteByEmailSheet> {
                   decoration: InputDecoration(
                     labelText: 'Email address',
                     hintText: 'name@example.com',
-                    prefixIcon: Icon(Icons.alternate_email_rounded, color: color),
+                    prefixIcon:
+                        Icon(Icons.alternate_email_rounded, color: color),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: cs.onSurface.withOpacity(0.15)),
+                      borderSide:
+                          BorderSide(color: cs.onSurface.withOpacity(0.15)),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: cs.onSurface.withOpacity(0.15)),
+                      borderSide:
+                          BorderSide(color: cs.onSurface.withOpacity(0.15)),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
@@ -932,7 +1265,8 @@ class _InviteByEmailSheetState extends State<_InviteByEmailSheet> {
                         onPressed: () => Navigator.of(context).pop(),
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 14),
-                          side: BorderSide(color: cs.onSurface.withOpacity(0.18)),
+                          side:
+                              BorderSide(color: cs.onSurface.withOpacity(0.18)),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
                           ),
@@ -972,6 +1306,121 @@ class _InviteByEmailSheetState extends State<_InviteByEmailSheet> {
   }
 }
 
+/// A settlement ("X paid Y") record rendered inline in the group's activity
+/// list. Visually distinct from expenses — a payment, not a charge — so the
+/// list reads like Splitwise where settling up leaves a trace.
+class _SettlementRow extends StatelessWidget {
+  const _SettlementRow({required this.txn, required this.meId});
+  final SettlementTxn txn;
+  final String? meId;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final fromIsMe = txn.from?.id == meId;
+    final toIsMe = txn.to?.id == meId;
+    final fromName = fromIsMe
+        ? 'You'
+        : ((txn.from?.name.isNotEmpty ?? false) ? txn.from!.name : 'Someone');
+    final toName = toIsMe
+        ? 'you'
+        : ((txn.to?.name.isNotEmpty ?? false) ? txn.to!.name : 'someone');
+
+    return ReactionEditor(
+      targetType: 'settlement',
+      targetId: txn.id,
+      groupId: txn.groupId,
+      reactions: txn.reactions,
+      child: Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardTheme.color,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Theme.of(context).dividerColor),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: AppColors.accent.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child:
+                const Icon(Icons.swap_horiz_rounded, color: AppColors.accent),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$fromName paid $toName',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w800, fontSize: 15),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(Icons.check_circle_rounded,
+                        size: 12, color: AppColors.accent),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        txn.note.isEmpty
+                            ? 'Payment · ${DateFmt.relative(txn.date)}'
+                            : '${txn.note} · ${DateFmt.relative(txn.date)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: cs.onSurface.withOpacity(0.6),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                Money.format(txn.amount, code: txn.currency),
+                style:
+                    const TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+              ),
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  'settled up',
+                  style: TextStyle(
+                    color: AppColors.accent,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 10.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+      ),
+    );
+  }
+}
+
 class _ExpenseRow extends StatelessWidget {
   const _ExpenseRow({
     required this.expense,
@@ -996,12 +1445,13 @@ class _ExpenseRow extends StatelessWidget {
     final netColor = myNet > 0 ? AppColors.accent : AppColors.danger;
     final netLabel = myNet > 0 ? 'you get back' : 'you owe';
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
+    return ReactionEditor(
+      targetType: 'expense',
+      targetId: expense.id as String,
+      groupId: expense.groupId as String,
+      reactions: expense.reactions as List<ReactionSummary>,
+      onTap: onTap,
+      child: Container(
           padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
           decoration: BoxDecoration(
             color: Theme.of(context).cardTheme.color,
@@ -1098,7 +1548,6 @@ class _ExpenseRow extends StatelessWidget {
             ],
           ),
         ),
-      ),
     );
   }
 }

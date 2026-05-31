@@ -1,7 +1,7 @@
 name: expense_app
 description: Expense sharing & personal finance — premium Flutter client.
 publish_to: "none"
-version: 0.1.0+1
+version: 0.1.0+3
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -70,20 +70,29 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/
+    # `app_logo.png` lives at the project's `assets/` root (not under
+    # `assets/images/`) because flutter_launcher_icons reads it from
+    # there. It must be listed explicitly so `Image.asset('assets/
+    # app_logo.png')` resolves at runtime — otherwise BrandLogo silently
+    # falls through to the wallet errorBuilder icon.
+    - assets/app_logo.png
 
 flutter_launcher_icons:
-  # `app_logo.png` is the launcher art with a baked-in white background —
-  # use it everywhere a solid icon is shown (legacy square Android icon,
-  # web favicon, Windows .ico). The adaptive icon layer is the only place
-  # we want the transparent `logo.png`, since its backdrop is rendered
-  # separately via `adaptive_icon_background`.
+  # `app_logo.png` is the launcher art with proper baked-in margin around
+  # the glyph — use it everywhere, including as the adaptive foreground.
+  # The tight transparent `logo.png` previously used as the adaptive
+  # foreground caused the glyph to touch the icon edges on launchers that
+  # apply a circle / squircle mask (Android's adaptive-icon safe zone is
+  # only the central 66/108 ≈ 61% of the canvas, so any foreground that
+  # fills the full canvas WILL get clipped). The baked-in margin on
+  # `app_logo.png` keeps the glyph comfortably inside that safe zone.
   android: true
   ios: false
   image_path: "assets/app_logo.png"
   remove_alpha_ios: true
   background_color_ios: "#FFFFFF"
   adaptive_icon_background: "#FFFFFF"
-  adaptive_icon_foreground: "assets/images/logo.png"
+  adaptive_icon_foreground: "assets/app_logo.png"
   web:
     generate: true
     image_path: "assets/app_logo.png"

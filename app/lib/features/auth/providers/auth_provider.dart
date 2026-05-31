@@ -79,7 +79,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     required String email,
     required String password,
     required String otp,
-    String currency = 'USD',
+    String currency = 'PKR',
   }) async {
     state = state.copyWith(clearError: true);
     try {
@@ -155,6 +155,18 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> updateProfile({String? name, String? currency, String? bio}) async {
     final updated = await _repo.updateProfile(name: name, currency: currency, bio: bio);
     state = state.copyWith(user: updated);
+  }
+
+  /// Change the logged-in user's password. Throws if the current password
+  /// is wrong or the account has no password (Google sign-in).
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    await _repo.changePassword(
+      currentPassword: currentPassword,
+      newPassword: newPassword,
+    );
   }
 
   /// Pick & upload a new avatar. Pass [file] on mobile, [bytes]+[filename] on web.

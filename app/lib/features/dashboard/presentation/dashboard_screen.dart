@@ -82,7 +82,7 @@ class DashboardScreen extends ConsumerWidget {
             child: _SpendingCard(
               feedAsync: feedAsync,
               personalAsync: personalAsync,
-              currency: user?.currency ?? 'USD',
+              currency: user?.currency ?? 'PKR',
               userId: user?.id ?? '',
               now: now,
             ),
@@ -760,7 +760,7 @@ class _FriendsSummaryBanner extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(friendsSummaryProvider);
     final user = ref.watch(authProvider).user;
-    final currency = user?.currency ?? 'USD';
+    final currency = user?.currency ?? 'PKR';
 
     return async.when(
       loading: () => const SizedBox.shrink(),

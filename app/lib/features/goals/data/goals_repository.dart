@@ -33,7 +33,7 @@ class GoalsRepository {
     String emoji = '🎯',
     String category = 'other',
     required double targetAmount,
-    String currency = 'USD',
+    String currency = 'PKR',
     DateTime? targetDate,
     String priority = 'medium',
     String color = '#6C5CE7',

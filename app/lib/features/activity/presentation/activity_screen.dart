@@ -215,6 +215,10 @@ class _ActivityTile extends StatelessWidget {
         icon = Icons.handshake_rounded;
         color = Colors.blue;
         break;
+      case 'reaction.added':
+        icon = Icons.emoji_emotions_rounded;
+        color = const Color(0xFFFFC857);
+        break;
       default:
         icon = Icons.notifications_rounded;
         color = Colors.grey;

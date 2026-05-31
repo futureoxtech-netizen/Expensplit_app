@@ -53,7 +53,7 @@ class AuthRepository {
     required String email,
     required String password,
     required String otp,
-    String currency = 'USD',
+    String currency = 'PKR',
   }) async {
     final res = await _client.raw.post(
       '/auth/register',
@@ -175,6 +175,20 @@ class AuthRepository {
       '/auth/forgot-password/reset',
       data: {'email': email, 'otp': otp, 'newPassword': newPassword},
       options: _skipAuth,
+    );
+    _checkOkOrThrow(res.data, statusCode: res.statusCode);
+  }
+
+  /// Change the password of the logged-in user. The server verifies
+  /// [currentPassword] before applying [newPassword]; a wrong current
+  /// password (or a Google-only account) surfaces as a [Failure].
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final res = await _client.raw.patch(
+      '/users/me/password',
+      data: {'currentPassword': currentPassword, 'newPassword': newPassword},
     );
     _checkOkOrThrow(res.data, statusCode: res.statusCode);
   }

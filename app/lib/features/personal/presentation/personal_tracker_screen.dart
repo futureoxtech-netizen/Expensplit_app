@@ -16,33 +16,55 @@ import '../providers/personal_providers.dart';
 // ─── Category helpers ─────────────────────────────────────────────────────────
 
 const _categories = [
-  'food', 'transport', 'shopping', 'entertainment',
-  'health', 'bills', 'education', 'other',
+  'food',
+  'transport',
+  'shopping',
+  'entertainment',
+  'health',
+  'bills',
+  'education',
+  'other',
 ];
 
 IconData _categoryIcon(String cat) {
   switch (cat) {
-    case 'food':          return Icons.restaurant_rounded;
-    case 'transport':     return Icons.directions_car_rounded;
-    case 'shopping':      return Icons.shopping_bag_rounded;
-    case 'entertainment': return Icons.movie_rounded;
-    case 'health':        return Icons.favorite_rounded;
-    case 'bills':         return Icons.receipt_long_rounded;
-    case 'education':     return Icons.school_rounded;
-    default:              return Icons.category_rounded;
+    case 'food':
+      return Icons.restaurant_rounded;
+    case 'transport':
+      return Icons.directions_car_rounded;
+    case 'shopping':
+      return Icons.shopping_bag_rounded;
+    case 'entertainment':
+      return Icons.movie_rounded;
+    case 'health':
+      return Icons.favorite_rounded;
+    case 'bills':
+      return Icons.receipt_long_rounded;
+    case 'education':
+      return Icons.school_rounded;
+    default:
+      return Icons.category_rounded;
   }
 }
 
 Color _categoryColor(String cat) {
   switch (cat) {
-    case 'food':          return Colors.orange;
-    case 'transport':     return Colors.blue;
-    case 'shopping':      return Colors.pink;
-    case 'entertainment': return Colors.purple;
-    case 'health':        return Colors.red;
-    case 'bills':         return Colors.teal;
-    case 'education':     return Colors.indigo;
-    default:              return AppColors.primary;
+    case 'food':
+      return Colors.orange;
+    case 'transport':
+      return Colors.blue;
+    case 'shopping':
+      return Colors.pink;
+    case 'entertainment':
+      return Colors.purple;
+    case 'health':
+      return Colors.red;
+    case 'bills':
+      return Colors.teal;
+    case 'education':
+      return Colors.indigo;
+    default:
+      return AppColors.primary;
   }
 }
 
@@ -60,8 +82,7 @@ class PersonalTrackerScreen extends ConsumerStatefulWidget {
       _PersonalTrackerScreenState();
 }
 
-class _PersonalTrackerScreenState
-    extends ConsumerState<PersonalTrackerScreen> {
+class _PersonalTrackerScreenState extends ConsumerState<PersonalTrackerScreen> {
   _Mode _mode = _Mode.daily;
   DateTime _anchor = DateTime.now();
   DateTimeRange? _customRange;
@@ -191,7 +212,7 @@ class _PersonalTrackerScreenState
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authProvider).user;
-    final currency = user?.currency ?? 'USD';
+    final currency = user?.currency ?? 'PKR';
     final r = _range;
     final rangeKey = (r.start, r.end);
     _ensureScrollListener(rangeKey);
@@ -286,8 +307,8 @@ class _PersonalTrackerScreenState
                               visualDensity: VisualDensity.compact),
                         ),
                         Text(_rangeLabel,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w600)),
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w600)),
                         IconButton(
                           icon: const Icon(Icons.chevron_right_rounded),
                           onPressed: _next,
@@ -401,8 +422,7 @@ class _PersonalTrackerScreenState
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
                           fontSize: 13,
-                          color:
-                              theme.colorScheme.onSurface.withOpacity(0.5),
+                          color: theme.colorScheme.onSurface.withOpacity(0.5),
                         ),
                       ),
                     ),
@@ -550,18 +570,21 @@ class _PersonalTrackerScreenState
                   style: TextStyle(color: AppColors.danger)),
               onTap: () async {
                 Navigator.pop(sheetCtx);
+                // Use the dialog's own context for pop — using the outer
+                // screen context can leave the dialog barrier visible if the
+                // outer context is deactivated during the dialog animation.
                 final confirmed = await showDialog<bool>(
                   context: context,
-                  builder: (_) => AlertDialog(
+                  builder: (dialogCtx) => AlertDialog(
                     title: const Text('Delete expense?'),
                     content: Text('Remove "${e.description}"?'),
                     actions: [
                       TextButton(
-                        onPressed: () => Navigator.pop(context, false),
+                        onPressed: () => Navigator.pop(dialogCtx, false),
                         child: const Text('Cancel'),
                       ),
                       TextButton(
-                        onPressed: () => Navigator.pop(context, true),
+                        onPressed: () => Navigator.pop(dialogCtx, true),
                         child: const Text(
                           'Delete',
                           style: TextStyle(color: AppColors.danger),
@@ -570,11 +593,25 @@ class _PersonalTrackerScreenState
                     ],
                   ),
                 );
-                if (confirmed == true) {
-                  await ref
-                      .read(personalExpenseRepositoryProvider)
-                      .delete(e.id);
-                  ref.invalidate(personalExpenseListProvider);
+                if (confirmed == true && context.mounted) {
+                  try {
+                    await ref
+                        .read(personalExpenseRepositoryProvider)
+                        .delete(e.id);
+                    // Refresh the paged list shown on screen AND the
+                    // dashboard aggregation provider.
+                    final r = _range;
+                    await ref
+                        .read(personalExpensesPagedProvider((r.start, r.end))
+                            .notifier)
+                        .refresh();
+                    ref.invalidate(personalExpenseListProvider);
+                  } catch (err) {
+                    if (context.mounted) {
+                      showErrorSnack(context, err,
+                          fallback: 'Could not delete expense');
+                    }
+                  }
                 }
               },
             ),
@@ -592,8 +629,19 @@ class _PersonalTrackerScreenState
 
   static String _monthShort(int m) {
     const n = [
-      '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      '',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return n[m];
   }
@@ -623,8 +671,7 @@ class _ModeBtn extends StatelessWidget {
         child: Text(label,
             style: TextStyle(
               color: selected ? Colors.white : null,
-              fontWeight:
-                  selected ? FontWeight.w700 : FontWeight.w500,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
               fontSize: 13,
             )),
       ),
@@ -667,8 +714,8 @@ class _TotalCard extends StatelessWidget {
               color: Colors.white.withOpacity(0.15),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.wallet_rounded,
-                color: Colors.white, size: 26),
+            child:
+                const Icon(Icons.wallet_rounded, color: Colors.white, size: 26),
           ),
         ],
       ),
@@ -720,8 +767,7 @@ class _CategoryBar extends StatelessWidget {
                       Row(
                         children: [
                           Text(
-                            entry.key[0].toUpperCase() +
-                                entry.key.substring(1),
+                            entry.key[0].toUpperCase() + entry.key.substring(1),
                             style: const TextStyle(
                                 fontSize: 13, fontWeight: FontWeight.w600),
                           ),
@@ -740,8 +786,8 @@ class _CategoryBar extends StatelessWidget {
                           value: total > 0 ? entry.value / total : 0,
                           backgroundColor:
                               _categoryColor(entry.key).withOpacity(0.1),
-                          valueColor: AlwaysStoppedAnimation(
-                              _categoryColor(entry.key)),
+                          valueColor:
+                              AlwaysStoppedAnimation(_categoryColor(entry.key)),
                           minHeight: 5,
                         ),
                       ),
@@ -786,15 +832,15 @@ class _ExpenseRow extends StatelessWidget {
       confirmDismiss: (_) async {
         return await showDialog<bool>(
           context: context,
-          builder: (_) => AlertDialog(
+          builder: (dialogCtx) => AlertDialog(
             title: const Text('Delete expense?'),
             content: Text('Remove "${expense.description}"?'),
             actions: [
               TextButton(
-                  onPressed: () => Navigator.pop(context, false),
+                  onPressed: () => Navigator.pop(dialogCtx, false),
                   child: const Text('Cancel')),
               TextButton(
-                  onPressed: () => Navigator.pop(context, true),
+                  onPressed: () => Navigator.pop(dialogCtx, true),
                   child: const Text('Delete',
                       style: TextStyle(color: AppColors.danger))),
             ],
@@ -808,8 +854,7 @@ class _ExpenseRow extends StatelessWidget {
           onTap: onTap,
           borderRadius: BorderRadius.circular(12),
           child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
             child: Row(
               children: [
                 Container(
@@ -833,8 +878,8 @@ class _ExpenseRow extends StatelessWidget {
                       Text(
                           expense.category[0].toUpperCase() +
                               expense.category.substring(1),
-                          style:
-                              const TextStyle(fontSize: 12, color: Colors.grey)),
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.grey)),
                     ],
                   ),
                 ),
@@ -924,23 +969,22 @@ class _AddExpenseSheetState extends State<_AddExpenseSheet> {
             controller: _descCtrl,
             decoration: InputDecoration(
               labelText: 'Description',
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10)),
-              contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12, vertical: 12),
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             ),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _amtCtrl,
-            keyboardType:
-                const TextInputType.numberWithOptions(decimal: true),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: InputDecoration(
               labelText: 'Amount (${widget.currency})',
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10)),
-              contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12, vertical: 12),
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             ),
           ),
           const SizedBox(height: 12),
@@ -948,10 +992,10 @@ class _AddExpenseSheetState extends State<_AddExpenseSheet> {
             value: _category,
             decoration: InputDecoration(
               labelText: 'Category',
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10)),
-              contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12, vertical: 12),
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             ),
             items: _categories
                 .map((c) => DropdownMenuItem(
@@ -981,14 +1025,11 @@ class _AddExpenseSheetState extends State<_AddExpenseSheet> {
             },
             borderRadius: BorderRadius.circular(10),
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 12, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
               decoration: BoxDecoration(
                 border: Border.all(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .outline
-                        .withOpacity(0.5)),
+                    color:
+                        Theme.of(context).colorScheme.outline.withOpacity(0.5)),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Row(
@@ -1033,9 +1074,8 @@ class _AddExpenseSheetState extends State<_AddExpenseSheet> {
     final desc = _descCtrl.text.trim();
     final amt = double.tryParse(_amtCtrl.text.trim());
     if (desc.isEmpty || amt == null || amt <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Enter a valid description and amount')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Enter a valid description and amount')));
       return;
     }
     setState(() => _saving = true);

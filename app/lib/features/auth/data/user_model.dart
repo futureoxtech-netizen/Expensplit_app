@@ -4,10 +4,11 @@ class UserModel {
     required this.name,
     required this.email,
     this.avatarUrl = '',
-    this.currency = 'USD',
+    this.currency = 'PKR',
     this.locale = 'en-US',
     this.bio = '',
     this.referralCode,
+    this.isPlaceholder = false,
   });
 
   factory UserModel.fromJson(Map<String, dynamic> j) => UserModel(
@@ -15,10 +16,11 @@ class UserModel {
         name: j['name'] ?? '',
         email: j['email'] ?? '',
         avatarUrl: j['avatarUrl'] ?? '',
-        currency: j['currency'] ?? 'USD',
+        currency: j['currency'] ?? 'PKR',
         locale: j['locale'] ?? 'en-US',
         bio: j['bio'] ?? '',
         referralCode: j['referralCode'],
+        isPlaceholder: j['isPlaceholder'] == true,
       );
 
   Map<String, dynamic> toJson() => {
@@ -30,6 +32,7 @@ class UserModel {
         'locale': locale,
         'bio': bio,
         'referralCode': referralCode,
+        'isPlaceholder': isPlaceholder,
       };
 
   final String id;
@@ -40,6 +43,11 @@ class UserModel {
   final String locale;
   final String bio;
   final String? referralCode;
+
+  /// True for "guest" members who aren't on Expensplit — they can be split
+  /// with but have no account, email or login. See the backend placeholder
+  /// user docs.
+  final bool isPlaceholder;
 
   UserModel copyWith({
     String? name,
@@ -52,6 +60,7 @@ class UserModel {
         id: id,
         email: email,
         referralCode: referralCode,
+        isPlaceholder: isPlaceholder,
         name: name ?? this.name,
         avatarUrl: avatarUrl ?? this.avatarUrl,
         currency: currency ?? this.currency,
