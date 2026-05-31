@@ -199,13 +199,19 @@ class AuthRepository {
     await TokenStorage.instance.clear();
   }
 
-  Future<UserModel> updateProfile({String? name, String? currency, String? bio}) async {
+  Future<UserModel> updateProfile({
+    String? name,
+    String? currency,
+    String? bio,
+    String? groupInvitePolicy,
+  }) async {
     final res = await _client.raw.patch(
       '/users/me',
       data: {
         if (name != null) 'name': name,
         if (currency != null) 'currency': currency,
         if (bio != null) 'bio': bio,
+        if (groupInvitePolicy != null) 'groupInvitePolicy': groupInvitePolicy,
       },
     );
     if (res.data is Map && (res.data['ok'] as bool? ?? false)) {

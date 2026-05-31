@@ -152,8 +152,18 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(user: user);
   }
 
-  Future<void> updateProfile({String? name, String? currency, String? bio}) async {
-    final updated = await _repo.updateProfile(name: name, currency: currency, bio: bio);
+  Future<void> updateProfile({
+    String? name,
+    String? currency,
+    String? bio,
+    String? groupInvitePolicy,
+  }) async {
+    final updated = await _repo.updateProfile(
+      name: name,
+      currency: currency,
+      bio: bio,
+      groupInvitePolicy: groupInvitePolicy,
+    );
     state = state.copyWith(user: updated);
   }
 

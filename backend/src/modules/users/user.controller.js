@@ -18,6 +18,7 @@ const updateSchema = z.object({
   currency: z.string().length(3).optional(),
   locale: z.string().optional(),
   bio: z.string().max(280).optional(),
+  groupInvitePolicy: z.enum(['anyone', 'approval']).optional(),
 });
 
 const changePasswordSchema = z.object({
@@ -407,6 +408,15 @@ export const userController = {
         await group.save();
       }
     }
+
+    // ── Step 2b: Drop any pending group invitations for this user ──────────
+    // They were never a member of those groups, so the loop above misses them.
+    // Leaves invites *sent* by this user intact (the invitee can still act on
+    // them); only their own outstanding invites are cleared.
+    await Group.updateMany(
+      { 'pendingMembers.user': userId },
+      { $pull: { pendingMembers: { user: userId } } },
+    );
 
     // ── Step 3: Wipe personal data ────────────────────────────────────────
     await PersonalExpense.deleteMany({ user: userId });

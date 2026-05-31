@@ -5,6 +5,7 @@ import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/error_messages.dart';
 import '../../../core/pagination/paged_sliver_list.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../shared/widgets/app_sheet.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../../../shared/widgets/shimmer_loader.dart';
@@ -458,13 +459,8 @@ class _PersonalTrackerScreenState extends ConsumerState<PersonalTrackerScreen> {
   void _showAddSheet(BuildContext context, String currency,
       {PersonalExpenseModel? existing}) {
     final r = _range;
-    showModalBottomSheet(
+    showAppSheet(
       context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      clipBehavior: Clip.antiAlias,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => _AddExpenseSheet(
         currency: currency,
         existing: existing,
@@ -488,12 +484,8 @@ class _PersonalTrackerScreenState extends ConsumerState<PersonalTrackerScreen> {
     String currency,
     PersonalExpenseModel e,
   ) {
-    showModalBottomSheet(
+    showAppFixedSheet(
       context: context,
-      useSafeArea: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
       builder: (sheetCtx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -943,8 +935,7 @@ class _AddExpenseSheetState extends State<_AddExpenseSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
+      padding: const EdgeInsets.only(
         left: 20,
         right: 20,
         top: 20,

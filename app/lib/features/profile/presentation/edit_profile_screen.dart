@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/error_messages.dart';
+import '../../../shared/widgets/app_sheet.dart';
 import '../../../shared/widgets/app_text_field.dart';
 import '../../../shared/widgets/avatar.dart';
 import '../../../shared/widgets/gradient_scaffold.dart';
@@ -50,7 +51,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
 
   Future<void> _pickAndUploadAvatar() async {
     final picker = ImagePicker();
-    final source = await showModalBottomSheet<ImageSource>(
+    final source = await showAppFixedSheet<ImageSource>(
       context: context,
       builder: (ctx) => SafeArea(
         child: Column(

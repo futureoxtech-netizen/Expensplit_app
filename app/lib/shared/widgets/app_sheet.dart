@@ -78,15 +78,10 @@ Future<T?> showAppSheet<T>({
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
     ),
-    builder: (ctx) {
-      return DraggableScrollableSheet(
-        initialChildSize: 0.5,
-        minChildSize: 0.3,
-        maxChildSize: maxHeightFraction,
-        expand: false,
-        builder: (_, scrollCtrl) => builder(ctx),
-      );
-    },
+    builder: (ctx) => Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+      child: builder(ctx),
+    ),
   );
 }
 

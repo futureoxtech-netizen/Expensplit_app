@@ -44,17 +44,31 @@ export const activityService = {
     return { items, total, page, limit, hasMore: skip + items.length < total };
   },
 
-  async listForUser({ groupIds, page = 1, limit = 50 }) {
+  async listForUser({ groupIds, pendingGroupIds = [], page = 1, limit = 50 }) {
     const skip = (page - 1) * limit;
+    // Build a query that includes:
+    //  • All activities from groups the user is a full member of.
+    //  • Only group.invite activities from groups where the user has a pending
+    //    invite — so they can see the invitation in their Activity feed without
+    //    seeing unrelated group activity they haven't been accepted into yet.
+    const orClauses = [{ group: { $in: groupIds } }];
+    if (pendingGroupIds.length) {
+      // Only surface group.invite activities from groups where the user is
+      // pending — they must not see other activity (expenses, balances, etc.)
+      // until they accept. Use exact string match, not a regex, to be safe
+      // across all MongoDB driver versions.
+      orClauses.push({ group: { $in: pendingGroupIds }, type: 'group.invite' });
+    }
+    const filter = orClauses.length === 1 ? orClauses[0] : { $or: orClauses };
     const [items, total] = await Promise.all([
-      Activity.find({ group: { $in: groupIds } })
+      Activity.find(filter)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .populate('actor', 'name avatarUrl')
         .populate('group', 'name coverColor')
         .lean(),
-      Activity.countDocuments({ group: { $in: groupIds } }),
+      Activity.countDocuments(filter),
     ]);
     return { items, total, page, limit, hasMore: skip + items.length < total };
   },

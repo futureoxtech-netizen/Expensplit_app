@@ -47,25 +47,31 @@ class DashboardScreen extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
             child: Row(
               children: [
-                Avatar(name: user?.name ?? 'You', imageUrl: user?.avatarUrl, size: 46),
+                GestureDetector(
+                  onTap: () => context.go('/profile'),
+                  child: Avatar(name: user?.name ?? 'You', imageUrl: user?.avatarUrl, size: 46),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        greeting,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.45),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
+                  child: GestureDetector(
+                    onTap: () => context.go('/profile'),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          greeting,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.45),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
-                      ),
-                      Text(
-                        user?.name.split(' ').first ?? 'Friend',
-                        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-                      ),
-                    ],
+                        Text(
+                          user?.name.split(' ').first ?? 'Friend',
+                          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 _NotificationBell(

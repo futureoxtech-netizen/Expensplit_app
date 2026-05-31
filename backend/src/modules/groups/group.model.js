@@ -10,6 +10,20 @@ const memberSchema = new mongoose.Schema(
   { _id: false },
 );
 
+// A person who was added to the group but whose `groupInvitePolicy` is
+// 'approval' — they only become a real member once they accept. Pending
+// people are NOT members: they're excluded from balances, splits and the
+// member list until they accept.
+const pendingMemberSchema = new mongoose.Schema(
+  {
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    invitedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    role: { type: String, enum: ['admin', 'member'], default: 'member' },
+    invitedAt: { type: Date, default: Date.now },
+  },
+  { _id: false },
+);
+
 const groupSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
@@ -28,6 +42,7 @@ const groupSchema = new mongoose.Schema(
       default: () => uuid().replace(/-/g, '').slice(0, 10).toUpperCase(),
     },
     members: { type: [memberSchema], default: [] },
+    pendingMembers: { type: [pendingMemberSchema], default: [] },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     archived: { type: Boolean, default: false },
   },
@@ -35,9 +50,14 @@ const groupSchema = new mongoose.Schema(
 );
 
 groupSchema.index({ 'members.user': 1 });
+groupSchema.index({ 'pendingMembers.user': 1 });
 
 groupSchema.method('isMember', function isMember(userId) {
   return this.members.some((m) => m.user.toString() === userId.toString());
+});
+
+groupSchema.method('isPending', function isPending(userId) {
+  return (this.pendingMembers ?? []).some((m) => m.user.toString() === userId.toString());
 });
 
 groupSchema.method('roleOf', function roleOf(userId) {

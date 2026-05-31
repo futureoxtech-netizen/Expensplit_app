@@ -14,6 +14,12 @@ final groupsListProvider = FutureProvider.autoDispose<List<GroupModel>>((ref) as
   return ref.watch(groupRepositoryProvider).list();
 });
 
+/// Pending group invitations awaiting the current user's accept/decline.
+final myInvitesProvider =
+    FutureProvider.autoDispose<List<GroupInvite>>((ref) async {
+  return ref.watch(groupRepositoryProvider).listInvites();
+});
+
 final groupDetailProvider =
     FutureProvider.autoDispose.family<GroupModel, String>((ref, id) async {
   return ref.watch(groupRepositoryProvider).getById(id);

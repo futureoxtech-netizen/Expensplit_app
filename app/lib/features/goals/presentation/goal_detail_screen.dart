@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/error_messages.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../shared/widgets/app_sheet.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../../../shared/widgets/shimmer_loader.dart';
 import '../data/goal_model.dart';
@@ -228,15 +229,8 @@ class _GoalDetailBodyState extends ConsumerState<_GoalDetailBody> {
 
   // ── Actions ────────────────────────────────────────────────────────────────
   Future<void> _showAddContribution(BuildContext context) async {
-    await showModalBottomSheet<void>(
+    await showAppSheet<void>(
       context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      clipBehavior: Clip.antiAlias,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
       builder: (_) => AddContributionSheet(
         goal: _goal,
         onAdded: (updated) => setState(() => _goal = updated),
@@ -245,15 +239,8 @@ class _GoalDetailBodyState extends ConsumerState<_GoalDetailBody> {
   }
 
   Future<void> _showEditSheet(BuildContext context) async {
-    await showModalBottomSheet<void>(
+    await showAppSheet<void>(
       context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      clipBehavior: Clip.antiAlias,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
       builder: (_) => CreateGoalSheet(
         existing: _goal,
         onCreated: () async {
@@ -765,7 +752,7 @@ class _AddContributionSheetState extends ConsumerState<AddContributionSheet> {
     }
 
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.zero,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

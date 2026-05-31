@@ -29,12 +29,35 @@ export const groupController = {
 
   addMember: asyncHandler(async (req, res) => {
     const email = z.string().email().parse(req.body?.email);
-    const group = await groupService.addMemberByEmail({
+    const result = await groupService.addMemberByEmail({
       userId: req.user.id,
       groupId: req.params.id,
       email,
     });
-    res.json({ ok: true, data: group });
+    // `status` distinguishes a direct add from a pending invitation so the
+    // client can say "Invitation sent" vs "Member added".
+    res.json({ ok: true, data: result.group, status: result.status });
+  }),
+
+  listInvites: asyncHandler(async (req, res) => {
+    const data = await groupService.listInvitesForUser({ userId: req.user.id });
+    res.json({ ok: true, data });
+  }),
+
+  acceptInvite: asyncHandler(async (req, res) => {
+    const result = await groupService.acceptInvite({
+      userId: req.user.id,
+      groupId: req.params.id,
+    });
+    res.json({ ok: true, data: result.group });
+  }),
+
+  declineInvite: asyncHandler(async (req, res) => {
+    const result = await groupService.declineInvite({
+      userId: req.user.id,
+      groupId: req.params.id,
+    });
+    res.json({ ok: true, data: result });
   }),
 
   addPlaceholder: asyncHandler(async (req, res) => {

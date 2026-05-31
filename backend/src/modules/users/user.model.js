@@ -19,6 +19,10 @@ const userSchema = new mongoose.Schema(
     currency: { type: String, default: 'USD' },
     locale: { type: String, default: 'en-US' },
     bio: { type: String, default: '' },
+    // Controls who may add this user to a group:
+    //   'anyone'   — any member can add them straight in (default; legacy behaviour)
+    //   'approval' — adding them creates a pending invite they must accept first
+    groupInvitePolicy: { type: String, enum: ['anyone', 'approval'], default: 'anyone' },
     refreshTokens: { type: [String], default: [], select: false },
     fcmTokens: { type: [String], default: [] },
     // OneSignal subscription / player IDs registered by every device this
@@ -49,6 +53,7 @@ userSchema.method('toPublic', function toPublic() {
     currency: this.currency,
     locale: this.locale,
     bio: this.bio,
+    groupInvitePolicy: this.groupInvitePolicy ?? 'anyone',
     referralCode: this.referralCode,
     isEmailVerified: this.isEmailVerified,
     notificationPrefs: this.notificationPrefs ?? {

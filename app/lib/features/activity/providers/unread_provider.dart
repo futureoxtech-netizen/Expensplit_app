@@ -21,9 +21,16 @@ Future<void> _writeLastSeen(DateTime when) async {
 
 class UnreadActivityNotifier extends StateNotifier<int> {
   UnreadActivityNotifier(this._ref) : super(0) {
-    _ref.listen(activityFeedProvider, (_, next) {
+    _ref.listen(activityFeedProvider, (prev, next) {
       final items = next.items;
-      if (items != null) _recompute(items);
+      if (items != null) {
+        _recompute(items);
+      } else if (!next.isLoadingFirst && next.error == null) {
+        // Feed was invalidated (reset to initial state) by a socket event.
+        // Kick off a background reload so the unread count stays accurate
+        // without requiring the user to open the Activity screen first.
+        _ref.read(activityFeedProvider.notifier).loadFirst();
+      }
     });
     // Initial compute when feed already has data.
     final items = _ref.read(activityFeedProvider).items;

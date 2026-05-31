@@ -7,6 +7,7 @@ import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/error_messages.dart';
 import '../../../core/pagination/paged_sliver_list.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../shared/widgets/app_sheet.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../../../shared/widgets/shimmer_loader.dart';
@@ -158,15 +159,8 @@ class _GoalsScreenState extends ConsumerState<GoalsScreen> {
   }
 
   Future<void> _showCreateSheet(BuildContext context) async {
-    await showModalBottomSheet<void>(
+    await showAppSheet<void>(
       context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      clipBehavior: Clip.antiAlias,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
       builder: (_) => CreateGoalSheet(
         onCreated: () {
           _refreshAll();
@@ -603,7 +597,7 @@ class _CreateGoalSheetState extends ConsumerState<CreateGoalSheet> {
     final currencySymbol = Money.symbolOf(currencyCode);
 
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.zero,
       child: DraggableScrollableSheet(
         initialChildSize: 0.88,
         minChildSize: 0.5,
@@ -849,30 +843,15 @@ class _CreateGoalSheetState extends ConsumerState<CreateGoalSheet> {
     const emojis = ['🎯', '🏠', '🚗', '✈️', '🎓', '📱', '💍', '💼',
                     '❤️', '🛡️', '⭐', '🌟', '💰', '🎮', '🏋️', '🎸',
                     '🌴', '🍕', '🎂', '🏆', '🎨', '📚', '🚀', '💡'];
-    final picked = await showModalBottomSheet<String>(
+    final picked = await showAppFixedSheet<String>(
       context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      clipBehavior: Clip.antiAlias,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (_) => Padding(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(
-              child: Container(
-                width: 36, height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).dividerColor,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
+            const AppSheetHandle(),
             const Text('Choose emoji',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
             const SizedBox(height: 12),

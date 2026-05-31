@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../../app/theme/app_colors.dart';
+import '../../../core/errors/failure.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/pagination/paged_sliver_list.dart';
 import '../../../shared/widgets/app_sheet.dart';
@@ -37,6 +39,14 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tab = TabController(length: 3, vsync: this);
 
+  /// Returns true when [e] represents a 403 Forbidden / permission denied
+  /// response — used to auto-redirect pending-invite members to `/groups`.
+  bool _isForbidden(Object e) {
+    if (e is DioException) return e.response?.statusCode == 403;
+    if (e is Failure) return e.statusCode == 403 || e.code == 'FORBIDDEN';
+    return false;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -58,51 +68,66 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
     return groupAsync.when(
       loading: () =>
           const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (e, _) => Scaffold(
-        appBar: AppBar(
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back_rounded),
-            onPressed: () =>
-                context.canPop() ? context.pop() : context.go('/groups'),
-          ),
-        ),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.error_outline_rounded, size: 40),
-                const SizedBox(height: 12),
-                // When a group is deleted out from under you, the fetch 404s.
-                // Give a clear message and a way back instead of a dead end.
-                Text(
-                  friendlyError(e),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'This group may have been deleted.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withOpacity(0.6),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                FilledButton(
-                  onPressed: () => context.go('/groups'),
-                  child: const Text('Back to groups'),
-                ),
-              ],
+      error: (e, _) {
+        // 403 means the user is a pending invite member (approval policy) or
+        // was removed. Automatically navigate to the Groups screen where the
+        // pending invite card is visible — no dead-end error page.
+        final is403 = _isForbidden(e);
+        if (is403) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) context.go('/groups');
+          });
+          // Show a brief loading indicator while the redirect fires.
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        return Scaffold(
+          appBar: AppBar(
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_rounded),
+              onPressed: () =>
+                  context.canPop() ? context.pop() : context.go('/groups'),
             ),
           ),
-        ),
-      ),
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.error_outline_rounded, size: 40),
+                  const SizedBox(height: 12),
+                  // When a group is deleted out from under you, the fetch 404s.
+                  // Give a clear message and a way back instead of a dead end.
+                  Text(
+                    friendlyError(e),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'This group may have been deleted.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withOpacity(0.6),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  FilledButton(
+                    onPressed: () => context.go('/groups'),
+                    child: const Text('Back to groups'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
       data: (group) {
         final color = _parseColor(group.coverColor) ?? AppColors.primary;
         return Scaffold(
@@ -585,17 +610,11 @@ class _BalancesTab extends ConsumerWidget {
   ) async {
     final ctrl =
         TextEditingController(text: suggestedAmount.toStringAsFixed(2));
-    final entered = await showModalBottomSheet<double>(
+    final entered = await showAppSheet<double>(
       context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      clipBehavior: Clip.antiAlias,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setState) => Padding(
-          padding: EdgeInsets.only(
-              bottom: MediaQuery.of(ctx).viewInsets.bottom,
+          padding: const EdgeInsets.only(
               left: 20,
               right: 20,
               top: 20),
@@ -689,13 +708,8 @@ class _BalancesTab extends ConsumerWidget {
       ref.invalidate(groupExpensesProvider(group.id));
       ref.invalidate(groupExpensesPagedProvider(group.id));
       if (context.mounted) {
-        showModalBottomSheet(
+        showAppFixedSheet(
           context: context,
-          isScrollControlled: true,
-          useSafeArea: true,
-          clipBehavior: Clip.antiAlias,
-          shape: const RoundedRectangleBorder(
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
           builder: (modalCtx) => Padding(
             padding: const EdgeInsets.fromLTRB(24, 32, 24, 40),
             child: Column(
@@ -764,6 +778,16 @@ class _MembersTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
+    final me = ref.watch(authProvider).user;
+    var myRole = 'member';
+    for (final m in group.members) {
+      if (m.user.id == me?.id) {
+        myRole = m.role;
+        break;
+      }
+    }
+    final canManage = myRole == 'owner' || myRole == 'admin';
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
       children: [
@@ -849,6 +873,95 @@ class _MembersTab extends ConsumerWidget {
               ],
             ),
           ),
+        // Pending invitations — people who were added but require approval and
+        // haven't accepted yet. They are NOT members, so they don't appear in
+        // balances or expense splits until they accept.
+        if (group.pendingMembers.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 8, left: 4),
+            child: Row(
+              children: [
+                Icon(Icons.hourglass_top_rounded,
+                    size: 14, color: cs.onSurface.withOpacity(0.5)),
+                const SizedBox(width: 6),
+                Text(
+                  'PENDING INVITATIONS',
+                  style: TextStyle(
+                    fontSize: 11,
+                    letterSpacing: 0.8,
+                    fontWeight: FontWeight.w700,
+                    color: cs.onSurface.withOpacity(0.5),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          for (final p in group.pendingMembers)
+            Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardTheme.color,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: Theme.of(context).dividerColor),
+              ),
+              child: Row(
+                children: [
+                  Opacity(
+                    opacity: 0.75,
+                    child: Avatar(
+                        name: p.user.name, imageUrl: p.user.avatarUrl),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          p.user.name.isEmpty ? 'Invited user' : p.user.name,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          p.invitedBy != null
+                              ? 'Invited by ${p.invitedBy!.name}'
+                              : 'Waiting to accept',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: cs.onSurface.withOpacity(0.6),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.warn.withOpacity(0.16),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'Pending',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Color.lerp(AppColors.warn, Colors.black, 0.25),
+                      ),
+                    ),
+                  ),
+                  if (canManage)
+                    IconButton(
+                      tooltip: 'Cancel invitation',
+                      visualDensity: VisualDensity.compact,
+                      icon: Icon(Icons.close_rounded,
+                          size: 18, color: cs.onSurface.withOpacity(0.5)),
+                      onPressed: () => _cancelPending(context, ref, p),
+                    ),
+                ],
+              ),
+            ),
+        ],
         const SizedBox(height: 8),
         PrimaryButton(
           icon: Icons.person_add_alt_1_rounded,
@@ -902,6 +1015,19 @@ class _MembersTab extends ConsumerWidget {
     }
   }
 
+  Future<void> _cancelPending(
+      BuildContext context, WidgetRef ref, PendingMember p) async {
+    try {
+      await ref.read(groupRepositoryProvider).removeMember(group.id, p.user.id);
+      ref.invalidate(groupDetailProvider(group.id));
+      if (context.mounted) showSuccessSnack(context, 'Invitation cancelled');
+    } catch (e) {
+      if (context.mounted) {
+        showErrorSnack(context, e, fallback: 'Could not cancel invitation');
+      }
+    }
+  }
+
   Future<void> _removeMember(
       BuildContext context, WidgetRef ref, GroupMember m) async {
     final confirmed = await showDialog<bool>(
@@ -938,14 +1064,8 @@ class _MembersTab extends ConsumerWidget {
   }
 
   Future<void> _invite(BuildContext context, WidgetRef ref) async {
-    final email = await showModalBottomSheet<String>(
+    final email = await showAppSheet<String>(
       context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
       builder: (ctx) => _InviteByEmailSheet(
         groupName: group.name,
         groupColor: groupColor,
@@ -953,10 +1073,17 @@ class _MembersTab extends ConsumerWidget {
     );
     if (email == null || email.isEmpty) return;
     try {
-      await ref.read(groupRepositoryProvider).addMember(group.id, email);
+      final outcome =
+          await ref.read(groupRepositoryProvider).addMember(group.id, email);
       ref.invalidate(groupDetailProvider(group.id));
-      if (context.mounted)
-        showSuccessSnack(context, 'Member added to "${group.name}"');
+      if (context.mounted) {
+        showSuccessSnack(
+          context,
+          outcome.isPending
+              ? 'Invitation sent — waiting for them to accept'
+              : 'Member added to "${group.name}"',
+        );
+      }
     } catch (e) {
       if (context.mounted)
         showErrorSnack(context, e, fallback: 'Could not invite member');
@@ -1154,8 +1281,7 @@ class _InviteByEmailSheetState extends State<_InviteByEmailSheet> {
     final cs = Theme.of(context).colorScheme;
     final color = widget.groupColor;
     return Padding(
-      padding:
-          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.zero,
       child: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 12, 24, 28),

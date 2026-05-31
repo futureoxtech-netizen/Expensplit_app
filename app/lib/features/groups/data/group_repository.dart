@@ -1,6 +1,18 @@
 import '../../../core/network/dio_client.dart';
 import 'group_model.dart';
 
+/// Result of adding someone to a group. [status] is one of:
+///   • `added`          — they're now a member
+///   • `pending`        — an invitation was sent; they must accept first
+///   • `already_member` — they were already in the group
+class AddMemberOutcome {
+  AddMemberOutcome({required this.group, required this.status});
+  final GroupModel group;
+  final String status;
+
+  bool get isPending => status == 'pending';
+}
+
 class GroupRepository {
   GroupRepository(this._client);
   final DioClient _client;
@@ -60,10 +72,33 @@ class GroupRepository {
     return GroupModel.fromJson(res['data'] as Map<String, dynamic>);
   }
 
-  Future<GroupModel> addMember(String groupId, String email) async {
+  Future<AddMemberOutcome> addMember(String groupId, String email) async {
     final res =
         await _client.post('/groups/$groupId/members', body: {'email': email});
+    return AddMemberOutcome(
+      group: GroupModel.fromJson(res['data'] as Map<String, dynamic>),
+      status: (res['status'] ?? 'added').toString(),
+    );
+  }
+
+  /// Group invitations the current user has received but not yet accepted.
+  Future<List<GroupInvite>> listInvites() async {
+    final res = await _client.get('/groups/invites');
+    final data = (res['data'] ?? []) as List;
+    return data
+        .map((j) => GroupInvite.fromJson(j as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Accept a pending invitation → become a member of the group.
+  Future<GroupModel> acceptInvite(String groupId) async {
+    final res = await _client.post('/groups/$groupId/invites/accept');
     return GroupModel.fromJson(res['data'] as Map<String, dynamic>);
+  }
+
+  /// Decline a pending invitation → it's removed.
+  Future<void> declineInvite(String groupId) async {
+    await _client.post('/groups/$groupId/invites/decline');
   }
 
   /// Add a "guest" member (someone not on Expensplit) so expenses can be

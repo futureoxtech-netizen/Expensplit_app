@@ -15,6 +15,31 @@ class GroupMember {
   final String role;
 }
 
+/// Someone invited to the group whose privacy setting requires approval. They
+/// are not a member yet — shown as "pending" until they accept.
+class PendingMember {
+  PendingMember({required this.user, this.invitedBy, this.invitedAt});
+
+  factory PendingMember.fromJson(Map<String, dynamic> j) {
+    final raw = j['user'];
+    final user = raw is Map<String, dynamic>
+        ? UserModel.fromJson(raw)
+        : UserModel(id: raw.toString(), name: '', email: '');
+    final inv = j['invitedBy'];
+    return PendingMember(
+      user: user,
+      invitedBy: inv is Map<String, dynamic> ? UserModel.fromJson(inv) : null,
+      invitedAt: j['invitedAt'] != null
+          ? DateTime.tryParse(j['invitedAt'].toString())
+          : null,
+    );
+  }
+
+  final UserModel user;
+  final UserModel? invitedBy;
+  final DateTime? invitedAt;
+}
+
 class GroupModel {
   GroupModel({
     required this.id,
@@ -26,6 +51,7 @@ class GroupModel {
     required this.currency,
     required this.inviteCode,
     required this.members,
+    this.pendingMembers = const [],
     this.createdAt,
   });
 
@@ -41,6 +67,9 @@ class GroupModel {
         members: ((j['members'] ?? []) as List)
             .map((m) => GroupMember.fromJson(m as Map<String, dynamic>))
             .toList(),
+        pendingMembers: ((j['pendingMembers'] ?? []) as List)
+            .map((m) => PendingMember.fromJson(m as Map<String, dynamic>))
+            .toList(),
         createdAt: j['createdAt'] != null ? DateTime.tryParse(j['createdAt'].toString()) : null,
       );
 
@@ -53,7 +82,41 @@ class GroupModel {
   final String currency;
   final String inviteCode;
   final List<GroupMember> members;
+  final List<PendingMember> pendingMembers;
   final DateTime? createdAt;
+}
+
+/// A pending invitation the current user has received — surfaced as a banner on
+/// the Groups screen with Accept / Decline actions.
+class GroupInvite {
+  GroupInvite({
+    required this.groupId,
+    required this.name,
+    required this.coverColor,
+    required this.memberCount,
+    this.invitedBy,
+    this.invitedAt,
+  });
+
+  factory GroupInvite.fromJson(Map<String, dynamic> j) => GroupInvite(
+        groupId: (j['groupId'] ?? j['_id'] ?? j['id']).toString(),
+        name: j['name'] ?? '',
+        coverColor: j['coverColor'] ?? '#6C5CE7',
+        memberCount: (j['memberCount'] as num?)?.toInt() ?? 0,
+        invitedBy: j['invitedBy'] is Map<String, dynamic>
+            ? UserModel.fromJson(j['invitedBy'] as Map<String, dynamic>)
+            : null,
+        invitedAt: j['invitedAt'] != null
+            ? DateTime.tryParse(j['invitedAt'].toString())
+            : null,
+      );
+
+  final String groupId;
+  final String name;
+  final String coverColor;
+  final int memberCount;
+  final UserModel? invitedBy;
+  final DateTime? invitedAt;
 }
 
 class BalanceEntry {

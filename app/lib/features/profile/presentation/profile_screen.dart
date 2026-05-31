@@ -5,9 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/error_messages.dart';
+import '../../../shared/widgets/app_sheet.dart';
 import '../../../shared/widgets/avatar.dart';
 import '../../../shared/widgets/gradient_scaffold.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -36,7 +38,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   Future<void> _pickAndUploadAvatar() async {
     final picker = ImagePicker();
-    final source = await showModalBottomSheet<ImageSource>(
+    final source = await showAppFixedSheet<ImageSource>(
       context: context,
       builder: (ctx) => SafeArea(
         child: Column(
@@ -199,6 +201,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             onTap: () => _pickCurrency(user?.currency ?? 'PKR'),
           ),
           const SizedBox(height: 20),
+          const _SectionTitle('Privacy'),
+          _Tile(
+            icon: Icons.group_add_rounded,
+            title: 'Who can add you to groups',
+            subtitle: user == null
+                ? null
+                : (user.requiresGroupApproval
+                    ? 'Approval required — you confirm before joining'
+                    : 'Anyone — members can add you straight in'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: user == null
+                ? null
+                : () => _pickInvitePolicy(user.groupInvitePolicy),
+          ),
+          const SizedBox(height: 20),
           const _SectionTitle('Notifications'),
           _Tile(
             icon: Icons.notifications_active_rounded,
@@ -214,10 +231,25 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             title: 'Version',
             subtitle: 'Expensplit 0.1.0',
           ),
-          const _Tile(
-            icon: Icons.shield_outlined,
-            title: 'Privacy',
-            subtitle: 'Your data is encrypted in transit and only shared with members of groups you join.',
+          _Tile(
+            icon: Icons.privacy_tip_outlined,
+            title: 'Privacy Policy',
+            subtitle: 'expensplit.futureoxtech.com/privacy-policy',
+            trailing: const Icon(Icons.open_in_new_rounded, size: 18),
+            onTap: () => launchUrl(
+              Uri.parse('https://expensplit.futureoxtech.com/privacy-policy'),
+              mode: LaunchMode.externalApplication,
+            ),
+          ),
+          _Tile(
+            icon: Icons.description_outlined,
+            title: 'Terms & Conditions',
+            subtitle: 'expensplit.futureoxtech.com/terms',
+            trailing: const Icon(Icons.open_in_new_rounded, size: 18),
+            onTap: () => launchUrl(
+              Uri.parse('https://expensplit.futureoxtech.com/terms'),
+              mode: LaunchMode.externalApplication,
+            ),
           ),
           const SizedBox(height: 24),
           OutlinedButton.icon(
@@ -253,53 +285,156 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
-  Future<void> _pickCurrency(String current) async {
-    final picked = await showModalBottomSheet<String>(
+  Future<void> _pickInvitePolicy(String current) async {
+    final picked = await showAppSheet<String>(
       context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      clipBehavior: Clip.antiAlias,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      builder: (sheetCtx) => DraggableScrollableSheet(
-        initialChildSize: 0.55,
-        minChildSize: 0.3,
-        maxChildSize: 0.88,
-        expand: false,
-        builder: (_, scrollCtrl) => ListView(
-          controller: scrollCtrl,
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          children: [
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).dividerColor,
-                  borderRadius: BorderRadius.circular(2),
+      builder: (sheetCtx) {
+        final cs = Theme.of(sheetCtx).colorScheme;
+        Widget option({
+          required String value,
+          required IconData icon,
+          required String title,
+          required String subtitle,
+        }) {
+          final selected = value == current;
+          return Container(
+            margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+            decoration: BoxDecoration(
+              color: selected
+                  ? AppColors.primary.withOpacity(0.08)
+                  : cs.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: selected
+                    ? AppColors.primary.withOpacity(0.5)
+                    : cs.onSurface.withOpacity(0.12),
+                width: selected ? 1.5 : 1,
+              ),
+            ),
+            child: ListTile(
+              leading: Icon(icon,
+                  color: selected ? AppColors.primary : cs.onSurface),
+              title: Text(title,
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+              subtitle: Text(subtitle, style: const TextStyle(fontSize: 12.5)),
+              trailing: selected
+                  ? const Icon(Icons.check_circle_rounded,
+                      color: AppColors.primary)
+                  : const Icon(Icons.circle_outlined),
+              onTap: () => Navigator.pop(sheetCtx, value),
+            ),
+          );
+        }
+
+        return SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Theme.of(sheetCtx).dividerColor,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
-            ),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 6),
-              child: Text(
-                'Choose your default currency',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(24, 16, 24, 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Who can add you to groups',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  ),
+                ),
               ),
-            ),
-            for (final entry in _supportedCurrencies.entries)
-              ListTile(
-                title: Text(entry.value),
-                trailing: entry.key == current
-                    ? const Icon(Icons.check_rounded, color: AppColors.primary)
-                    : null,
-                onTap: () => Navigator.pop(sheetCtx, entry.key),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 10),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Choose whether people can add you to a group instantly, '
+                    'or only after you approve the invitation.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.4,
+                      color: cs.onSurface.withOpacity(0.6),
+                    ),
+                  ),
+                ),
               ),
-            const SizedBox(height: 12),
-          ],
+              option(
+                value: 'anyone',
+                icon: Icons.public_rounded,
+                title: 'Anyone',
+                subtitle:
+                    'Group members can add you straight into a group.',
+              ),
+              option(
+                value: 'approval',
+                icon: Icons.verified_user_rounded,
+                title: 'Require approval',
+                subtitle:
+                    'You get an invitation to accept or decline before joining.',
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+    if (picked == null || picked == current) return;
+    try {
+      await ref
+          .read(authProvider.notifier)
+          .updateProfile(groupInvitePolicy: picked);
+      if (context.mounted) {
+        showSuccessSnack(
+          context,
+          picked == 'approval'
+              ? 'You\'ll now approve group invites before joining'
+              : 'Anyone can now add you to groups',
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        showErrorSnack(context, e, fallback: 'Could not update setting');
+      }
+    }
+  }
+
+  Future<void> _pickCurrency(String current) async {
+    final picked = await showAppSheet<String>(
+      context: context,
+      builder: (sheetCtx) => ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(sheetCtx).size.height * 0.65,
+        ),
+        child: ListView(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          children: [
+          const AppSheetHandle(),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 24, vertical: 6),
+            child: Text(
+              'Choose your default currency',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            ),
+          ),
+          for (final entry in _supportedCurrencies.entries)
+            ListTile(
+              title: Text(entry.value),
+              trailing: entry.key == current
+                  ? const Icon(Icons.check_rounded, color: AppColors.primary)
+                  : null,
+              onTap: () => Navigator.pop(sheetCtx, entry.key),
+            ),
+          const SizedBox(height: 12),
+        ],
         ),
       ),
     );

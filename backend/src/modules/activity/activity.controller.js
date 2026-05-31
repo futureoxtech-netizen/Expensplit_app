@@ -19,9 +19,17 @@ export const activityController = {
   }),
 
   feed: asyncHandler(async (req, res) => {
-    const groupIds = await Group.find({ 'members.user': req.user.id }).distinct('_id');
+    // Fetch groups where the user is a full member AND groups where they have
+    // a pending invite. The service will filter pending-group activities to
+    // group.invite only, so they see their own invitation but not unrelated
+    // group activity they haven't been admitted to yet.
+    const [groupIds, pendingGroupIds] = await Promise.all([
+      Group.find({ 'members.user': req.user.id }).distinct('_id'),
+      Group.find({ 'pendingMembers.user': req.user.id }).distinct('_id'),
+    ]);
     const data = await activityService.listForUser({
       groupIds,
+      pendingGroupIds,
       page: Number(req.query.page) || 1,
       limit: Math.min(Number(req.query.limit) || 50, 100),
     });

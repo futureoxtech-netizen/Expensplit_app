@@ -7,6 +7,7 @@ import '../../../shared/widgets/app_sheet.dart';
 import '../../../shared/widgets/avatar.dart';
 import '../../activity/providers/unread_provider.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../groups/providers/group_providers.dart';
 import '../../settings/settings_providers.dart';
 
 /// Five-tab bottom navigation with a "More" tab that opens a styled
@@ -47,6 +48,11 @@ class HomeShell extends ConsumerWidget {
     final location = GoRouterState.of(context).matchedLocation;
     final index = _indexOfLocation(location);
     final unread = ref.watch(unreadActivityProvider);
+    // Pending group-invite count → badge on the Groups tab for discoverability.
+    final inviteCount = ref.watch(myInvitesProvider).maybeWhen(
+          data: (invites) => invites.length,
+          orElse: () => 0,
+        );
     final isHome = location == '/home';
 
     // Tabs navigate with `context.go`, which replaces the route rather than
@@ -76,8 +82,15 @@ class HomeShell extends ConsumerWidget {
           destinations: [
             for (final t in _primaryTabs)
               NavigationDestination(
-                icon: Icon(t.icon, size: 22),
-                selectedIcon: Icon(t.icon, color: AppColors.primary, size: 22),
+                icon: _Badged(
+                  count: t.path == '/groups' ? inviteCount : 0,
+                  child: Icon(t.icon, size: 22),
+                ),
+                selectedIcon: _Badged(
+                  count: t.path == '/groups' ? inviteCount : 0,
+                  child:
+                      Icon(t.icon, color: AppColors.primary, size: 22),
+                ),
                 label: t.label,
               ),
             NavigationDestination(

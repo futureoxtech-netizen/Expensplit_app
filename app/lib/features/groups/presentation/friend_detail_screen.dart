@@ -5,6 +5,7 @@ import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/error_messages.dart';
 import '../../../core/pagination/paged_sliver_list.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../shared/widgets/app_sheet.dart';
 import '../../../shared/widgets/avatar.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../../../shared/widgets/shimmer_loader.dart';
@@ -210,13 +211,8 @@ class _FriendDetailScreenState extends ConsumerState<FriendDetailScreen> {
 
   Future<void> _showSettleUp(BuildContext context, WidgetRef ref,
       {required String currency, required double net}) async {
-    final settled = await showModalBottomSheet<double>(
+    final settled = await showAppSheet<double>(
       context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      clipBehavior: Clip.antiAlias,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => _SettleUpSheet(
         friend: widget.friend,
         net: net,
@@ -232,13 +228,8 @@ class _FriendDetailScreenState extends ConsumerState<FriendDetailScreen> {
 
   static void _showSettlementSuccess(
       BuildContext context, double amount, String currency, String name) {
-    showModalBottomSheet(
+    showAppFixedSheet(
       context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      clipBehavior: Clip.antiAlias,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (modalCtx) => Padding(
         padding: const EdgeInsets.fromLTRB(24, 32, 24, 40),
         child: Column(
@@ -471,8 +462,7 @@ class _SettleUpSheetState extends State<_SettleUpSheet> {
     final isOwed = net > 0;
 
     return Padding(
-      padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
+      padding: const EdgeInsets.only(
           left: 20,
           right: 20,
           top: 20),

@@ -9,6 +9,7 @@ class UserModel {
     this.bio = '',
     this.referralCode,
     this.isPlaceholder = false,
+    this.groupInvitePolicy = 'anyone',
   });
 
   factory UserModel.fromJson(Map<String, dynamic> j) => UserModel(
@@ -21,6 +22,7 @@ class UserModel {
         bio: j['bio'] ?? '',
         referralCode: j['referralCode'],
         isPlaceholder: j['isPlaceholder'] == true,
+        groupInvitePolicy: (j['groupInvitePolicy'] ?? 'anyone').toString(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -33,6 +35,7 @@ class UserModel {
         'bio': bio,
         'referralCode': referralCode,
         'isPlaceholder': isPlaceholder,
+        'groupInvitePolicy': groupInvitePolicy,
       };
 
   final String id;
@@ -49,12 +52,19 @@ class UserModel {
   /// user docs.
   final bool isPlaceholder;
 
+  /// Who may add this user to a group: `'anyone'` (added directly) or
+  /// `'approval'` (added as a pending invite they must accept first).
+  final String groupInvitePolicy;
+
+  bool get requiresGroupApproval => groupInvitePolicy == 'approval';
+
   UserModel copyWith({
     String? name,
     String? avatarUrl,
     String? currency,
     String? locale,
     String? bio,
+    String? groupInvitePolicy,
   }) =>
       UserModel(
         id: id,
@@ -66,5 +76,6 @@ class UserModel {
         currency: currency ?? this.currency,
         locale: locale ?? this.locale,
         bio: bio ?? this.bio,
+        groupInvitePolicy: groupInvitePolicy ?? this.groupInvitePolicy,
       );
 }

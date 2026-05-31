@@ -129,7 +129,20 @@ class _ActivityTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         onTap: item.groupId == null
             ? null
-            : () => context.push('/groups/${item.groupId}'),
+            : () {
+                // For pending invites the user is not yet a full member, so
+                // navigating directly to the group detail would return 403.
+                // Send them to the Groups list instead, where the pending
+                // invitations banner lets them accept/decline.
+                // Any group.invite* type means the user is still pending —
+                // they can't open the group detail. Take them to the Groups
+                // screen where the invite card lets them accept/decline.
+                if (item.type.startsWith('group.invite')) {
+                  context.go('/groups');
+                } else {
+                  context.push('/groups/${item.groupId}');
+                }
+              },
         child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
@@ -218,6 +231,30 @@ class _ActivityTile extends StatelessWidget {
       case 'reaction.added':
         icon = Icons.emoji_emotions_rounded;
         color = const Color(0xFFFFC857);
+        break;
+      case 'group.created':
+        icon = Icons.group_add_rounded;
+        color = const Color(0xFF6C5CE7);
+        break;
+      case 'group.member_added':
+        icon = Icons.person_add_rounded;
+        color = const Color(0xFF0984E3);
+        break;
+      case 'group.member_joined':
+        icon = Icons.how_to_reg_rounded;
+        color = const Color(0xFF00B894);
+        break;
+      case 'group.invite':
+        icon = Icons.mark_email_unread_rounded;
+        color = const Color(0xFF6C5CE7);
+        break;
+      case 'group.invite_declined':
+        icon = Icons.cancel_rounded;
+        color = Colors.red;
+        break;
+      case 'group.invite_cancelled':
+        icon = Icons.remove_circle_rounded;
+        color = Colors.orange;
         break;
       default:
         icon = Icons.notifications_rounded;

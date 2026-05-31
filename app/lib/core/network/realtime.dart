@@ -175,8 +175,17 @@ class RealtimeBridge {
       }
     });
 
-    s.on('group:updated', (_) {
+    s.on('group:updated', (data) {
       _ref.invalidate(groupsListProvider);
+      // Membership / pending-invite changes may concern the current user too.
+      _ref.invalidate(myInvitesProvider);
+      // Refresh the affected group's detail so the Members tab (incl. pending
+      // invitations) and balances update live.
+      final groupId = _gid(data);
+      if (groupId != null) {
+        _ref.invalidate(groupDetailProvider(groupId));
+        _ref.invalidate(groupBalancesProvider(groupId));
+      }
       // New / removed members reshape the friend list.
       _invalidateFriendCaches(_ref);
     });
@@ -231,6 +240,24 @@ class RealtimeBridge {
         return;
       }
 
+      // Group invitation lifecycle (received / declined / cancelled). The
+      // recipient may not be a member of the group yet, so don't touch the
+      // group caches — just refresh the invitations banner + groups list.
+      // Also invalidate the activity feed: the backend now logs a group.invite
+      // activity entry that pending members can see in their feed.
+      if (type != null && type.startsWith('group.invite')) {
+        _ref.invalidate(myInvitesProvider);
+        _ref.invalidate(groupsListProvider);
+        _ref.invalidate(activityFeedProvider);
+        // The inviter receives group.invite_declined which also starts with
+        // group.invite — their pending-member list must clear immediately.
+        if (groupId != null) {
+          _ref.invalidate(groupDetailProvider(groupId));
+        }
+        _showBanner(data);
+        return;
+      }
+
       if (groupId != null) {
         // Make sure we're in this room going forward, then invalidate caches.
         if (_joinedGroups.add(groupId)) {
@@ -260,6 +287,11 @@ class RealtimeBridge {
       if (type.startsWith('group.')) {
         _ref.invalidate(groupsListProvider);
         _ref.invalidate(activityFeedProvider);
+        // Refresh the group detail so membership changes (pending → member,
+        // new member added, etc.) reflect immediately on the inviter's screen.
+        if (groupId != null) {
+          _ref.invalidate(groupDetailProvider(groupId));
+        }
         _invalidateFriendCaches(_ref);
       }
     });
@@ -285,7 +317,10 @@ class RealtimeBridge {
 
     IconData icon;
     Color accent;
-    if (type.startsWith('reaction.')) {
+    if (type.startsWith('group.invite')) {
+      icon = Icons.mark_email_unread_rounded;
+      accent = const Color(0xFF6C5CE7);
+    } else if (type.startsWith('reaction.')) {
       icon = Icons.emoji_emotions_rounded;
       accent = const Color(0xFFFFC857);
     } else if (type.startsWith('settlement.')) {
