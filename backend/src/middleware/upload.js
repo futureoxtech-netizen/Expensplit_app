@@ -62,14 +62,14 @@ export async function uploadToS3(buffer, mimetype, folder = 'uploads') {
         Key: key,
         Body: buffer,
         ContentType: mimetype,
-        // Objects are public-read — profile pictures and group covers
-        // must be accessible directly from the browser / app.
-        ACL: 'public-read',
+        // ACL is intentionally omitted — bucket-level policy handles public
+        // read access. Per-object ACLs fail when "Block Public Access" is on
+        // (the AWS default for buckets created after April 2023).
       }),
     );
     return `https://${env.AWS_S3_BUCKET}.s3.${env.AWS_REGION}.amazonaws.com/${key}`;
   } catch (err) {
-    logger.error({ err: err.message, key }, 'S3 upload failed');
+    logger.error({ err: err.message, code: err.Code ?? err.name, key }, 'S3 upload failed');
     return null;
   }
 }
