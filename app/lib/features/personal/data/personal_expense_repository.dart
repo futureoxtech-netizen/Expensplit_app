@@ -68,6 +68,7 @@ class PersonalExpenseRepository {
     required String category,
     required DateTime date,
     String? note,
+    String? receiptUrl,
   }) async {
     final res = await _client.post('/personal-expenses', body: {
       'description': description,
@@ -76,6 +77,7 @@ class PersonalExpenseRepository {
       'category': category,
       'date': date.toIso8601String(),
       if (note != null && note.isNotEmpty) 'note': note,
+      if (receiptUrl != null) 'receiptUrl': receiptUrl,
     });
     return PersonalExpenseModel.fromJson(res['data'] as Map<String, dynamic>);
   }
@@ -88,6 +90,7 @@ class PersonalExpenseRepository {
     String? category,
     DateTime? date,
     String? note,
+    String? receiptUrl,
   }) async {
     final body = <String, dynamic>{};
     if (description != null) body['description'] = description;
@@ -96,6 +99,7 @@ class PersonalExpenseRepository {
     if (category != null) body['category'] = category;
     if (date != null) body['date'] = date.toIso8601String();
     if (note != null) body['note'] = note;
+    if (receiptUrl != null) body['receiptUrl'] = receiptUrl;
     final res = await _client.patch('/personal-expenses/$id', body: body);
     return PersonalExpenseModel.fromJson(res['data'] as Map<String, dynamic>);
   }

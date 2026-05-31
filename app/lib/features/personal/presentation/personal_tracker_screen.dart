@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,10 +9,11 @@ import '../../../core/utils/formatters.dart';
 import '../../../shared/widgets/app_sheet.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/error_view.dart';
+import '../../../shared/widgets/receipt_picker.dart';
+import '../../../shared/widgets/receipt_viewer.dart';
 import '../../../shared/widgets/shimmer_loader.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../data/personal_expense_model.dart';
-import '../data/personal_expense_repository.dart';
 import '../providers/personal_providers.dart';
 
 // ─── Category helpers ─────────────────────────────────────────────────────────
@@ -546,6 +548,75 @@ class _PersonalTrackerScreenState extends ConsumerState<PersonalTrackerScreen> {
                 ],
               ),
             ),
+            if (e.receiptUrl.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+                child: GestureDetector(
+                  onTap: () => showReceiptViewer(sheetCtx, url: e.receiptUrl),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Stack(
+                      children: [
+                        SizedBox(
+                          height: 150,
+                          width: double.infinity,
+                          child: CachedNetworkImage(
+                            imageUrl: e.receiptUrl,
+                            fit: BoxFit.cover,
+                            placeholder: (_, __) => Container(
+                              color: Theme.of(sheetCtx)
+                                  .colorScheme
+                                  .onSurface
+                                  .withOpacity(0.05),
+                              child: const Center(
+                                child: SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2),
+                                ),
+                              ),
+                            ),
+                            errorWidget: (_, __, ___) => Container(
+                              height: 150,
+                              color: Theme.of(sheetCtx)
+                                  .colorScheme
+                                  .onSurface
+                                  .withOpacity(0.05),
+                              child: const Center(
+                                child: Icon(Icons.broken_image_rounded),
+                              ),
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          right: 8,
+                          bottom: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.5),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.zoom_in_rounded,
+                                    color: Colors.white, size: 15),
+                                SizedBox(width: 4),
+                                Text('Tap to view',
+                                    style: TextStyle(
+                                        color: Colors.white, fontSize: 11)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             const SizedBox(height: 4),
             ListTile(
               leading: const Icon(Icons.edit_rounded, color: AppColors.primary),
@@ -910,6 +981,7 @@ class _AddExpenseSheetState extends State<_AddExpenseSheet> {
   late final TextEditingController _amtCtrl;
   late String _category;
   late DateTime _date;
+  late final ReceiptController _receipt;
   bool _saving = false;
 
   bool get _isEdit => widget.existing != null;
@@ -923,22 +995,25 @@ class _AddExpenseSheetState extends State<_AddExpenseSheet> {
         text: e != null ? e.amount.toStringAsFixed(2) : '');
     _category = e?.category ?? 'food';
     _date = e?.date ?? DateTime.now();
+    _receipt = ReceiptController(initialUrl: e?.receiptUrl);
   }
 
   @override
   void dispose() {
     _descCtrl.dispose();
     _amtCtrl.dispose();
+    _receipt.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(
+    return SingleChildScrollView(
+      padding: EdgeInsets.only(
         left: 20,
         right: 20,
         top: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1034,6 +1109,8 @@ class _AddExpenseSheetState extends State<_AddExpenseSheet> {
               ),
             ),
           ),
+          const SizedBox(height: 16),
+          ReceiptPicker(controller: _receipt),
           const SizedBox(height: 20),
           SizedBox(
             width: double.infinity,
@@ -1070,6 +1147,19 @@ class _AddExpenseSheetState extends State<_AddExpenseSheet> {
       return;
     }
     setState(() => _saving = true);
+
+    // Upload a freshly-picked receipt first; bail out cleanly if it fails.
+    String receiptUrl;
+    try {
+      receiptUrl = await _receipt.resolveUrl(widget.ref);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        showErrorSnack(context, e, fallback: 'Could not upload receipt');
+      }
+      return;
+    }
+
     try {
       final repo = widget.ref.read(personalExpenseRepositoryProvider);
       if (_isEdit) {
@@ -1080,6 +1170,7 @@ class _AddExpenseSheetState extends State<_AddExpenseSheet> {
           currency: widget.currency,
           category: _category,
           date: _date,
+          receiptUrl: receiptUrl,
         );
       } else {
         await repo.create(
@@ -1088,6 +1179,7 @@ class _AddExpenseSheetState extends State<_AddExpenseSheet> {
           currency: widget.currency,
           category: _category,
           date: _date,
+          receiptUrl: receiptUrl,
         );
       }
       widget.onSaved();
@@ -1106,6 +1198,8 @@ class _AddExpenseSheetState extends State<_AddExpenseSheet> {
         Navigator.pop(context);
       }
     } catch (e) {
+      // Roll back a just-uploaded receipt so it doesn't orphan.
+      await _receipt.rollback(widget.ref);
       if (mounted) showErrorSnack(context, e);
     } finally {
       if (mounted) setState(() => _saving = false);

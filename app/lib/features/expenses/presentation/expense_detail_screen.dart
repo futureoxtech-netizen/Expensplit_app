@@ -1,6 +1,9 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
+import '../../../shared/widgets/receipt_viewer.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/error_messages.dart';
@@ -149,6 +152,13 @@ class ExpenseDetailScreen extends ConsumerWidget {
               const SizedBox(height: 8),
               Text(e.notes),
             ],
+            if (e.receiptUrl != null && e.receiptUrl!.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              const Text('Receipt',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 10),
+              _ReceiptThumb(url: e.receiptUrl!),
+            ],
             const SizedBox(height: 20),
             const Text('Reactions',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
@@ -208,5 +218,83 @@ class ExpenseDetailScreen extends ConsumerWidget {
       if (context.mounted)
         showErrorSnack(context, e, fallback: 'Could not delete expense');
     }
+  }
+}
+
+/// Tappable receipt thumbnail that opens the full-screen zoomable viewer.
+class _ReceiptThumb extends StatelessWidget {
+  const _ReceiptThumb({required this.url});
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: () => showReceiptViewer(context, url: url),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Stack(
+          children: [
+            SizedBox(
+              height: 200,
+              width: double.infinity,
+              child: CachedNetworkImage(
+                imageUrl: url,
+                fit: BoxFit.cover,
+                placeholder: (_, __) => Container(
+                  color: cs.onSurface.withOpacity(0.05),
+                  child: const Center(
+                    child: SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                ),
+                errorWidget: (_, __, ___) => Container(
+                  color: cs.onSurface.withOpacity(0.05),
+                  height: 200,
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.broken_image_rounded,
+                            color: cs.onSurface.withOpacity(0.4)),
+                        const SizedBox(height: 6),
+                        Text("Couldn't load receipt",
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: cs.onSurface.withOpacity(0.5))),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              right: 10,
+              bottom: 10,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.zoom_in_rounded, color: Colors.white, size: 16),
+                    SizedBox(width: 4),
+                    Text('Tap to view',
+                        style: TextStyle(color: Colors.white, fontSize: 11)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

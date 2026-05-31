@@ -1,10 +1,11 @@
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { AppError } from '../../utils/errors.js';
+import { deleteFromS3 } from '../../middleware/upload.js';
 import { PersonalExpense } from './personal.model.js';
 
 // POST /personal-expenses
 export const create = asyncHandler(async (req, res) => {
-  const { description, amount, currency, category, date, note } = req.body;
+  const { description, amount, currency, category, date, note, receiptUrl } = req.body;
   const expense = await PersonalExpense.create({
     user: req.user.id,
     description,
@@ -13,6 +14,7 @@ export const create = asyncHandler(async (req, res) => {
     category: category || 'other',
     date: date ? new Date(date) : new Date(),
     note: note || '',
+    receiptUrl: receiptUrl || '',
   });
   res.status(201).json({ ok: true, data: expense });
 });
@@ -74,22 +76,28 @@ export const summary = asyncHandler(async (req, res) => {
 
 // PATCH /personal-expenses/:id — partial update of the owner's own record.
 export const update = asyncHandler(async (req, res) => {
-  const { description, amount, currency, category, date, note } = req.body;
-  const patch = {};
-  if (description !== undefined) patch.description = description;
-  if (amount !== undefined) patch.amount = amount;
-  if (currency !== undefined) patch.currency = currency;
-  if (category !== undefined) patch.category = category;
-  if (date !== undefined) patch.date = new Date(date);
-  if (note !== undefined) patch.note = note;
+  const { description, amount, currency, category, date, note, receiptUrl } = req.body;
 
-  const expense = await PersonalExpense.findOneAndUpdate(
-    { _id: req.params.id, user: req.user.id },
-    { $set: patch },
-    { new: true },
-  );
-  if (!expense) throw new AppError('Not found', 404);
-  res.json({ ok: true, data: expense });
+  // Load first so we know the previous receipt — needed to clean up S3 if the
+  // receipt is being replaced or removed.
+  const existing = await PersonalExpense.findOne({ _id: req.params.id, user: req.user.id });
+  if (!existing) throw new AppError('Not found', 404);
+  const oldReceipt = existing.receiptUrl;
+
+  if (description !== undefined) existing.description = description;
+  if (amount !== undefined) existing.amount = amount;
+  if (currency !== undefined) existing.currency = currency;
+  if (category !== undefined) existing.category = category;
+  if (date !== undefined) existing.date = new Date(date);
+  if (note !== undefined) existing.note = note;
+  if (receiptUrl !== undefined) existing.receiptUrl = receiptUrl;
+  await existing.save();
+
+  // Receipt was swapped or cleared → drop the old object from storage.
+  if (receiptUrl !== undefined && oldReceipt && oldReceipt !== existing.receiptUrl) {
+    deleteFromS3(oldReceipt).catch(() => {});
+  }
+  res.json({ ok: true, data: existing });
 });
 
 // DELETE /personal-expenses/:id
@@ -99,5 +107,7 @@ export const remove = asyncHandler(async (req, res) => {
     user: req.user.id,
   });
   if (!expense) throw new AppError('Not found', 404);
+  // Clean up the attached receipt, if any.
+  if (expense.receiptUrl) deleteFromS3(expense.receiptUrl).catch(() => {});
   res.json({ ok: true });
 });

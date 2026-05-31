@@ -9,6 +9,7 @@ import '../../../core/utils/formatters.dart';
 import '../../../shared/widgets/app_text_field.dart';
 import '../../../shared/widgets/avatar.dart';
 import '../../../shared/widgets/primary_button.dart';
+import '../../../shared/widgets/receipt_picker.dart';
 import '../../auth/data/user_model.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../groups/providers/group_providers.dart';
@@ -39,11 +40,13 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
   final Map<String, TextEditingController> _valueCtrls = {};
   bool _loading = false;
   bool _prePopulated = false;
+  late final ReceiptController _receipt;
 
   @override
   void initState() {
     super.initState();
     final e = widget.initialExpense;
+    _receipt = ReceiptController(initialUrl: e?.receiptUrl);
     if (e != null) {
       _description.text = e.description;
       _amount.text = e.amount.toStringAsFixed(2);
@@ -64,6 +67,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     _description.dispose();
     _amount.dispose();
     _notes.dispose();
+    _receipt.dispose();
     for (final c in _valueCtrls.values) {
       c.dispose();
     }
@@ -100,6 +104,21 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     }
 
     setState(() => _loading = true);
+
+    // Upload the receipt (if a new one was picked) BEFORE creating the
+    // expense, so the record is saved with its URL. If this fails we never
+    // touched the expense, so just surface the error.
+    String receiptUrl;
+    try {
+      receiptUrl = await _receipt.resolveUrl(ref);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loading = false);
+        showErrorSnack(context, e, fallback: 'Could not upload receipt');
+      }
+      return;
+    }
+
     try {
       if (widget.isEdit) {
         final updated = await ref.read(expenseRepositoryProvider).update(
@@ -111,9 +130,11 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
               splits: _buildSplits(),
               category: _category,
               notes: _notes.text.trim(),
+              receiptUrl: receiptUrl,
             );
         final gid = updated.groupId;
         ref.invalidate(groupExpensesProvider(gid));
+        ref.invalidate(groupExpensesPagedProvider(gid));
         ref.invalidate(groupBalancesProvider(gid));
         ref.invalidate(expenseDetailProvider(updated.id));
         ref.invalidate(expenseFeedProvider);
@@ -127,8 +148,10 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
               splits: _buildSplits(),
               category: _category,
               notes: _notes.text.trim(),
+              receiptUrl: receiptUrl,
             );
         ref.invalidate(groupExpensesProvider(widget.groupId!));
+        ref.invalidate(groupExpensesPagedProvider(widget.groupId!));
         ref.invalidate(groupBalancesProvider(widget.groupId!));
         ref.invalidate(expenseFeedProvider);
       }
@@ -147,6 +170,9 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
         context.pop();
       }
     } catch (e) {
+      // The expense save failed but we may have just uploaded a receipt —
+      // delete it so it doesn't orphan in storage.
+      await _receipt.rollback(ref);
       if (mounted)
         showErrorSnack(context, e, fallback: 'Could not save expense');
     } finally {
@@ -324,6 +350,11 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                   maxLines: 3,
                   minLines: 1,
                 ),
+                const SizedBox(height: 16),
+                const Text('Receipt',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                ReceiptPicker(controller: _receipt),
                 const SizedBox(height: 22),
                 PrimaryButton(
                   label: widget.isEdit ? 'Save changes' : 'Save expense',

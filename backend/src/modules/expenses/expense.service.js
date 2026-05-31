@@ -8,6 +8,7 @@ import { emitToGroup } from '../../socket/index.js';
 import { activityService } from '../activity/activity.service.js';
 import { notifyUsers, actorName } from '../../services/notifications.service.js';
 import { reactionService } from '../reactions/reaction.service.js';
+import { deleteFromS3 } from '../../middleware/upload.js';
 
 async function getGroupAsMember(groupId, userId) {
   if (!mongoose.isValidObjectId(groupId)) throw NotFound('Group not found');
@@ -273,10 +274,16 @@ export const expenseService = {
       expense.tip = tip;
       expense.shares = shares.map((s) => ({ user: s.userId, amount: s.amount }));
     }
+    const oldReceipt = expense.receiptUrl;
     for (const field of ['description', 'notes', 'currency', 'category', 'paidBy', 'receiptUrl', 'spentAt']) {
       if (patch[field] !== undefined) expense[field] = patch[field];
     }
     await expense.save();
+
+    // Receipt replaced or removed → clean up the previous image from storage.
+    if (patch.receiptUrl !== undefined && oldReceipt && oldReceipt !== expense.receiptUrl) {
+      deleteFromS3(oldReceipt).catch(() => {});
+    }
 
     // Build a human-readable diff of what changed
     const after = {
@@ -350,6 +357,8 @@ export const expenseService = {
     await expense.save();
     // Reactions on a deleted expense are never surfaced again — drop them.
     await reactionService.purgeForTarget({ targetType: 'expense', targetId: expense._id }).catch(() => {});
+    // The receipt is gone for good once the expense is deleted — clean up S3.
+    if (expense.receiptUrl) deleteFromS3(expense.receiptUrl).catch(() => {});
     await activityService.log({
       groupId: group._id,
       actor: userId,

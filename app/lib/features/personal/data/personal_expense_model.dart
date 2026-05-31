@@ -7,6 +7,7 @@ class PersonalExpenseModel {
     required this.category,
     required this.date,
     this.note = '',
+    this.receiptUrl = '',
   });
 
   final String id;
@@ -16,6 +17,7 @@ class PersonalExpenseModel {
   final String category;
   final DateTime date;
   final String note;
+  final String receiptUrl;
 
   factory PersonalExpenseModel.fromJson(Map<String, dynamic> j) =>
       PersonalExpenseModel(
@@ -26,6 +28,7 @@ class PersonalExpenseModel {
         category: j['category'] as String? ?? 'other',
         date: DateTime.parse(j['date'] as String),
         note: j['note'] as String? ?? '',
+        receiptUrl: j['receiptUrl'] as String? ?? '',
       );
 }
 

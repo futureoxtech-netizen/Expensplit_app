@@ -10,6 +10,7 @@ import { simplifyDebts } from '../../utils/simplifyDebts.js';
 import { emitToGroup } from '../../socket/index.js';
 import { activityService } from '../activity/activity.service.js';
 import { notifyUser, notifyUsers, notifyGroup, actorName } from '../../services/notifications.service.js';
+import { deleteManyFromS3 } from '../../middleware/upload.js';
 
 // Populate spec shared by every method that returns a group to the client, so
 // members *and* pending members always arrive with their user details filled
@@ -63,12 +64,21 @@ async function classifyMembers(group) {
 // settlements, activity, and any guest (placeholder) users that only ever
 // existed inside it. Shared by "delete group" and the last-member-leaves path.
 async function purgeGroup(group) {
+  // Collect receipt images first so we can drop them from storage after the
+  // expense docs are gone (best-effort; never blocks the purge).
+  const withReceipts = await Expense.find({
+    group: group._id,
+    receiptUrl: { $nin: [null, ''] },
+  })
+    .select('receiptUrl')
+    .lean();
   await Promise.all([
     Expense.deleteMany({ group: group._id }),
     Settlement.deleteMany({ group: group._id }),
     Activity.deleteMany({ group: group._id }),
     User.deleteMany({ isPlaceholder: true, placeholderGroup: group._id }),
   ]);
+  deleteManyFromS3(withReceipts.map((e) => e.receiptUrl)).catch(() => {});
   await group.deleteOne();
 }
 

@@ -10,7 +10,7 @@ import { Otp } from '../auth/otp.model.js';
 import { DeletedAccount } from '../auth/deleted_account.model.js';
 import { PersonalExpense } from '../personal/personal.model.js';
 import { NotFound, BadRequest } from '../../utils/errors.js';
-import { uploadToS3 } from '../../middleware/upload.js';
+import { uploadToS3, deleteManyFromS3 } from '../../middleware/upload.js';
 
 const updateSchema = z.object({
   name: z.string().min(2).max(80).optional(),
@@ -380,9 +380,16 @@ export const userController = {
 
       if (otherMembers.length === 0) {
         // Sole member — delete everything related to this group
+        const grpReceipts = await Expense.find({
+          group: group._id,
+          receiptUrl: { $nin: [null, ''] },
+        })
+          .select('receiptUrl')
+          .lean();
         await Expense.deleteMany({ group: group._id });
         await Settlement.deleteMany({ group: group._id });
         await Activity.deleteMany({ group: group._id });
+        deleteManyFromS3(grpReceipts.map((e) => e.receiptUrl)).catch(() => {});
         await group.deleteOne();
       } else {
         // Has other members
@@ -419,7 +426,14 @@ export const userController = {
     );
 
     // ── Step 3: Wipe personal data ────────────────────────────────────────
+    const personalReceipts = await PersonalExpense.find({
+      user: userId,
+      receiptUrl: { $nin: [null, ''] },
+    })
+      .select('receiptUrl')
+      .lean();
     await PersonalExpense.deleteMany({ user: userId });
+    deleteManyFromS3(personalReceipts.map((e) => e.receiptUrl)).catch(() => {});
     await Otp.deleteMany({ email: user.email });
     await Activity.deleteMany({ actor: userId, group: null });
 

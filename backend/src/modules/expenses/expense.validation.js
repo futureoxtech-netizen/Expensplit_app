@@ -33,7 +33,10 @@ export const createExpenseSchema = z.object({
   splits: z.array(splitEntry).min(1),
   tax: z.number().nonnegative().optional().default(0),
   tip: z.number().nonnegative().optional().default(0),
-  receiptUrl: z.string().url().optional().or(z.literal('')),
+  // Accepts an absolute S3 URL (production) or a relative /uploads path
+  // (local-disk dev fallback). The value always comes from our own upload
+  // endpoint, so we only bound its length rather than requiring url() format.
+  receiptUrl: z.string().max(500).optional().or(z.literal('')),
   spentAt: z.coerce.date().optional(),
   recurring: z
     .object({

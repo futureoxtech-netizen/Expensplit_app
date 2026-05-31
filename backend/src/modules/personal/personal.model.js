@@ -13,6 +13,7 @@ const personalExpenseSchema = new mongoose.Schema(
     },
     date: { type: Date, required: true, index: true },
     note: { type: String, default: '' },
+    receiptUrl: { type: String, default: '' },
   },
   { timestamps: true },
 );

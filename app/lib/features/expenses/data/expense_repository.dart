@@ -19,6 +19,7 @@ class ExpenseRepository {
     double tax = 0,
     double tip = 0,
     DateTime? spentAt,
+    String? receiptUrl,
   }) async {
     final res = await _client.post('/expenses', body: {
       'groupId': groupId,
@@ -33,6 +34,7 @@ class ExpenseRepository {
       'tax': tax,
       'tip': tip,
       if (spentAt != null) 'spentAt': spentAt.toIso8601String(),
+      if (receiptUrl != null) 'receiptUrl': receiptUrl,
     });
     return ExpenseModel.fromJson(res['data'] as Map<String, dynamic>);
   }
@@ -101,6 +103,7 @@ class ExpenseRepository {
     String? notes,
     String? currency,
     DateTime? spentAt,
+    String? receiptUrl,
   }) async {
     final body = <String, dynamic>{
       if (description != null) 'description': description,
@@ -112,6 +115,7 @@ class ExpenseRepository {
       if (notes != null) 'notes': notes,
       if (currency != null) 'currency': currency,
       if (spentAt != null) 'spentAt': spentAt.toIso8601String(),
+      if (receiptUrl != null) 'receiptUrl': receiptUrl,
     };
     final res = await _client.patch('/expenses/$id', body: body);
     return ExpenseModel.fromJson(res['data'] as Map<String, dynamic>);

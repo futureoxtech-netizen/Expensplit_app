@@ -14,7 +14,7 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import crypto from 'node:crypto';
 import multer from 'multer';
-import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { env } from '../config/env.js';
 import { s3, hasS3 } from '../config/s3.js';
 import { logger } from '../config/logger.js';
@@ -72,6 +72,54 @@ export async function uploadToS3(buffer, mimetype, folder = 'uploads') {
     logger.error({ err: err.message, key }, 'S3 upload failed');
     return null;
   }
+}
+
+// ── Deletion (cleanup) ─────────────────────────────────────────────────────────
+
+/**
+ * Extract the S3 object key (or local relative path) from a stored URL.
+ * Handles both the absolute S3 URL and the `/uploads/...` dev fallback.
+ */
+function keyFromUrl(url) {
+  try {
+    if (url.startsWith('/uploads/')) return url.replace(/^\/uploads\//, '');
+    const u = new URL(url);
+    return decodeURIComponent(u.pathname.replace(/^\//, ''));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Best-effort delete of a previously uploaded file. Never throws — cleanup
+ * must not break the operation that triggered it (deleting/editing an
+ * expense). No-ops on empty input.
+ *
+ * @param {string} url  The stored receipt/avatar URL.
+ */
+export async function deleteFromS3(url) {
+  if (!url || typeof url !== 'string') return;
+  try {
+    // Local-disk fallback file (dev without S3).
+    if (url.startsWith('/uploads/')) {
+      const rel = keyFromUrl(url);
+      if (rel) await fs.unlink(path.resolve(env.UPLOAD_DIR, rel)).catch(() => {});
+      return;
+    }
+    if (!hasS3()) return;
+    const key = keyFromUrl(url);
+    if (!key) return;
+    await s3.send(new DeleteObjectCommand({ Bucket: env.AWS_S3_BUCKET, Key: key }));
+  } catch (err) {
+    logger.warn({ err: err.message, url }, 'S3 delete failed');
+  }
+}
+
+/** Delete many URLs concurrently (best-effort). Empty / falsy entries skipped. */
+export async function deleteManyFromS3(urls) {
+  const list = (urls ?? []).filter(Boolean);
+  if (list.length === 0) return;
+  await Promise.all(list.map((u) => deleteFromS3(u)));
 }
 
 // ── Local-disk fallback (development) ──────────────────────────────────────────
