@@ -51,6 +51,7 @@ class GroupModel {
     required this.currency,
     required this.inviteCode,
     required this.members,
+    this.notes = '',
     this.pendingMembers = const [],
     this.createdAt,
   });
@@ -63,6 +64,7 @@ class GroupModel {
         coverColor: j['coverColor'] ?? '#6C5CE7',
         icon: j['icon'] ?? 'group',
         currency: j['currency'] ?? 'PKR',
+        notes: j['notes'] ?? '',
         inviteCode: j['inviteCode'] ?? '',
         members: ((j['members'] ?? []) as List)
             .map((m) => GroupMember.fromJson(m as Map<String, dynamic>))
@@ -80,6 +82,7 @@ class GroupModel {
   final String coverColor;
   final String icon;
   final String currency;
+  final String notes;
   final String inviteCode;
   final List<GroupMember> members;
   final List<PendingMember> pendingMembers;

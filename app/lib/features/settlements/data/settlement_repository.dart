@@ -1,8 +1,11 @@
-import '../../../core/network/dio_client.dart';
+import '../../../core/db/local_store.dart';
+import '../../../core/sync/sync_engine.dart';
 
+/// Offline-first settlements. A recorded payment applies locally (adjusting
+/// balances instantly) and queues a sync op.
 class SettlementRepository {
-  SettlementRepository(this._client);
-  final DioClient _client;
+  SettlementRepository();
+  final _store = LocalStore.instance;
 
   Future<void> create({
     required String groupId,
@@ -13,20 +16,33 @@ class SettlementRepository {
     String method = 'cash',
     String? note,
   }) async {
-    await _client.post('/settlements', body: {
-      'groupId': groupId,
-      'from': from,
-      'to': to,
-      'amount': amount,
-      if (currency != null) 'currency': currency,
-      'method': method,
-      if (note != null) 'note': note,
-    });
+    await _store.createSettlementLocal(
+      groupId: groupId,
+      from: from,
+      to: to,
+      amount: amount,
+      currency: currency ?? 'PKR',
+      method: method,
+      note: note ?? '',
+    );
+    SyncEngine.instance.kick();
   }
 
   Future<List<Map<String, dynamic>>> listByGroup(String groupId) async {
-    final res = await _client.get('/settlements/group/$groupId');
-    final data = res['data'] as Map<String, dynamic>;
-    return ((data['items'] ?? []) as List).cast<Map<String, dynamic>>();
+    final rows = await _store.groupSettlements(groupId);
+    return [
+      for (final s in rows)
+        {
+          '_id': s.id,
+          'groupId': groupId,
+          'from': s.fromUserId,
+          'to': s.toUserId,
+          'amount': s.amount,
+          'currency': s.currency,
+          'method': s.method,
+          'note': s.note,
+          'settledAt': s.settledAt?.toIso8601String(),
+        }
+    ];
   }
 }

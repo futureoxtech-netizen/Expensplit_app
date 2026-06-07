@@ -6,7 +6,9 @@ import 'package:go_router/go_router.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/error_messages.dart';
 import '../../../core/pagination/paged_sliver_list.dart';
+import '../../../core/utils/amount_input_formatter.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../shared/widgets/ad_banner_widget.dart';
 import '../../../shared/widgets/app_sheet.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/error_view.dart';
@@ -113,6 +115,12 @@ class _GoalsScreenState extends ConsumerState<GoalsScreen> {
               child: _FilterChips(
                 selected: _statusFilter,
                 onChanged: (s) => setState(() => _statusFilter = s),
+              ),
+            ),
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: AdBannerWidget(),
               ),
             ),
             PagedSliverList<GoalModel>(
@@ -692,9 +700,7 @@ class _CreateGoalSheetState extends ConsumerState<CreateGoalSheet> {
                   prefixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 20),
                 ),
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
-                ],
+                inputFormatters: AmountInputFormatter.list(),
                 validator: (v) {
                   if (v == null || v.trim().isEmpty) return 'Enter a target amount';
                   final n = double.tryParse(v.replaceAll(',', ''));

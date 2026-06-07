@@ -7,6 +7,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/failure.dart';
+import '../../../core/utils/amount_input_formatter.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/pagination/paged_sliver_list.dart';
 import '../../../shared/widgets/app_sheet.dart';
@@ -430,6 +431,12 @@ class _ExpensesTabState extends ConsumerState<_ExpensesTab> {
         controller: _scrollCtrl,
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
+          SliverToBoxAdapter(
+            child: _GroupNotesBanner(
+              groupId: widget.groupId,
+              groupColor: widget.groupColor,
+            ),
+          ),
           PagedSliverList<GroupTxn>(
             state: state,
             onLoadFirst: notifier.loadFirst,
@@ -468,6 +475,198 @@ class _ExpensesTabState extends ConsumerState<_ExpensesTab> {
                   return _SettlementRow(txn: s, meId: me?.id);
               }
             },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Splitwise-style shared group notes. Shows a tappable pill ("Add group
+/// notes…") when empty, or the notes text when set. Any member can edit.
+class _GroupNotesBanner extends ConsumerWidget {
+  const _GroupNotesBanner({required this.groupId, required this.groupColor});
+  final String groupId;
+  final Color groupColor;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final groupAsync = ref.watch(groupDetailProvider(groupId));
+    final group = groupAsync.valueOrNull;
+    if (group == null) return const SizedBox.shrink();
+    final notes = group.notes.trim();
+    final hasNotes = notes.isNotEmpty;
+    final cs = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => _editNotes(context, ref, group),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: hasNotes
+                ? groupColor.withOpacity(0.08)
+                : cs.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: hasNotes
+                  ? groupColor.withOpacity(0.4)
+                  : cs.onSurface.withOpacity(0.12),
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                hasNotes ? Icons.sticky_note_2_rounded : Icons.edit_note_rounded,
+                size: 20,
+                color: hasNotes ? groupColor : cs.onSurface.withOpacity(0.6),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  hasNotes ? notes : 'Add group notes…',
+                  maxLines: hasNotes ? 4 : 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    height: 1.4,
+                    fontWeight: hasNotes ? FontWeight.w500 : FontWeight.w600,
+                    color: hasNotes
+                        ? cs.onSurface
+                        : cs.onSurface.withOpacity(0.55),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Icon(Icons.chevron_right_rounded,
+                  size: 18, color: cs.onSurface.withOpacity(0.4)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editNotes(
+      BuildContext context, WidgetRef ref, GroupModel group) async {
+    final saved = await showAppSheet<bool>(
+      context: context,
+      builder: (_) => _GroupNotesSheet(group: group, groupColor: groupColor),
+    );
+    if (saved == true) ref.invalidate(groupDetailProvider(group.id));
+  }
+}
+
+class _GroupNotesSheet extends ConsumerStatefulWidget {
+  const _GroupNotesSheet({required this.group, required this.groupColor});
+  final GroupModel group;
+  final Color groupColor;
+
+  @override
+  ConsumerState<_GroupNotesSheet> createState() => _GroupNotesSheetState();
+}
+
+class _GroupNotesSheetState extends ConsumerState<_GroupNotesSheet> {
+  late final TextEditingController _ctrl =
+      TextEditingController(text: widget.group.notes);
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await ref
+          .read(groupRepositoryProvider)
+          .updateNotes(widget.group.id, _ctrl.text.trim());
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        showErrorSnack(context, e, fallback: 'Could not save notes');
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    // NOTE: showAppSheet already pads for the keyboard (viewInsets), so we must
+    // not add it again here. Content scrolls so it never overflows.
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const AppSheetHandle(),
+          const SizedBox(height: 8),
+          const Text('Group notes',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 4),
+          Text(
+            'A shared note for everyone in the group — reminders, rules, '
+            'who owes what in real life, anything.',
+            style: TextStyle(
+              fontSize: 13,
+              color: cs.onSurface.withOpacity(0.6),
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _ctrl,
+            autofocus: true,
+            maxLines: 6,
+            minLines: 3,
+            maxLength: 2000,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: InputDecoration(
+              hintText: 'e.g. Splitting rent 60/40, settle every 1st.',
+              filled: true,
+              fillColor: cs.surface,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: cs.onSurface.withOpacity(0.15)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: cs.onSurface.withOpacity(0.15)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: widget.groupColor, width: 1.6),
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: _saving ? null : _save,
+              style: FilledButton.styleFrom(
+                backgroundColor: widget.groupColor,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+              ),
+              child: _saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Text('Save notes',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
           ),
         ],
       ),
@@ -644,6 +843,7 @@ class _BalancesTab extends ConsumerWidget {
                 controller: ctrl,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: AmountInputFormatter.list(),
                 decoration: InputDecoration(
                   labelText: 'Amount',
                   prefixText: '${group.currency} ',
@@ -1128,7 +1328,8 @@ class _AddGuestDialogState extends State<_AddGuestDialog> {
         padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
         child: Form(
           key: _formKey,
-          child: Column(
+          child: SingleChildScrollView(
+            child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
@@ -1234,6 +1435,7 @@ class _AddGuestDialogState extends State<_AddGuestDialog> {
                 ],
               ),
             ],
+          ),
           ),
         ),
       ),

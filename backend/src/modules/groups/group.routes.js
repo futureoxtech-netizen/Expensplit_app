@@ -6,6 +6,7 @@ import {
   createGroupSchema,
   joinByCodeSchema,
   updateGroupSchema,
+  updateNotesSchema,
 } from './group.validation.js';
 
 const router = Router();
@@ -18,6 +19,7 @@ router.post('/join', validate(joinByCodeSchema), groupController.joinByCode);
 router.get('/invites', groupController.listInvites);
 router.get('/:id', groupController.getById);
 router.patch('/:id', validate(updateGroupSchema), groupController.update);
+router.patch('/:id/notes', validate(updateNotesSchema), groupController.updateNotes);
 router.post('/:id/members', groupController.addMember);
 router.post('/:id/placeholders', groupController.addPlaceholder);
 router.delete('/:id/members/:memberId', groupController.removeMember);

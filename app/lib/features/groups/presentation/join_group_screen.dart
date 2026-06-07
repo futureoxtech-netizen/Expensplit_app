@@ -61,6 +61,11 @@ class _JoinGroupScreenState extends ConsumerState<JoinGroupScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
               const Text('Join a group',
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
               const SizedBox(height: 8),
@@ -130,7 +135,11 @@ class _JoinGroupScreenState extends ConsumerState<JoinGroupScreen> {
                 hint: 'e.g. AB12CD34',
                 prefixIcon: Icons.vpn_key_rounded,
               ),
-              const Spacer(),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
               PrimaryButton(label: 'Join group', loading: _loading, onPressed: _submit),
             ],
           ),

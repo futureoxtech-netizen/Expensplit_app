@@ -250,7 +250,7 @@ export const authService = {
         email: normalEmail,
         googleId,
         avatarUrl: picture ?? '',
-        currency: 'USD',
+        currency: 'PKR',
         referralCode: referralCode(),
         isEmailVerified: true,
       });

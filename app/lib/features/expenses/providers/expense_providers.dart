@@ -1,58 +1,83 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/network/dio_client.dart';
+import '../../../core/db/local_store.dart';
 import '../../../core/pagination/paged_list_notifier.dart';
+import '../../../core/sync/sync_engine.dart';
+import '../../../core/sync/sync_providers.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../data/expense_model.dart';
 import '../data/expense_repository.dart';
 
 final expenseRepositoryProvider = Provider<ExpenseRepository>(
-  (ref) => ExpenseRepository(DioClient.instance),
+  (ref) => ExpenseRepository(),
 );
 
-/// Single-page providers (kept for the dashboard preview which only renders
-/// the first 5 items and doesn't paginate).
-final groupExpensesProvider = FutureProvider.autoDispose
-    .family<ExpensePage, String>((ref, groupId) async {
-  return ref.watch(expenseRepositoryProvider).listByGroup(groupId);
+// ── Offline-first reads (stream from the local DB) ──────────────────────────
+
+final groupExpensesProvider =
+    StreamProvider.autoDispose.family<ExpensePage, String>((ref, groupId) {
+  SyncEngine.instance.kick();
+  // Preview stream (dashboard / group header) — only the most recent rows.
+  return LocalStore.instance.watchGroupExpensesJson(groupId, limit: 20).map((list) =>
+      ExpensePage(
+          items: list.map((j) => ExpenseModel.fromJson(j)).toList(),
+          hasMore: false,
+          page: 1));
 });
 
-final expenseFeedProvider =
-    FutureProvider.autoDispose<ExpensePage>((ref) async {
-  return ref.watch(expenseRepositoryProvider).feed();
+final expenseFeedProvider = StreamProvider.autoDispose<ExpensePage>((ref) {
+  SyncEngine.instance.kick();
+  return LocalStore.instance.watchFeedJson(limit: 20).map((list) => ExpensePage(
+      items: list.map((j) => ExpenseModel.fromJson(j)).toList(),
+      hasMore: false,
+      page: 1));
 });
 
-/// Infinite-scroll provider for the group detail "Expenses" tab. Returns a
-/// merged stream of expenses *and* settlement records (see [GroupTxn]) so
-/// recorded payments show up inline, the way Splitwise does it.
+/// Merged expenses + settlements for the group detail "Expenses" tab. Backed by
+/// the local DB; reloads after each server pull (via [syncRevisionProvider]) and
+/// on local writes (screens invalidate it after creating/editing).
 final groupExpensesPagedProvider = StateNotifierProvider.autoDispose
     .family<PagedListNotifier<GroupTxn>, PagedListState<GroupTxn>, String>(
         (ref, groupId) {
-  final repo = ref.watch(expenseRepositoryProvider);
+  ref.watch(syncRevisionProvider);
+  SyncEngine.instance.kick();
   return PagedListNotifier<GroupTxn>(
-    fetcher: (page, limit) => repo.groupTransactionsPaged(
-      groupId,
-      page: page,
-      limit: limit,
-    ),
+    fetcher: (page, limit) async {
+      final list = await LocalStore.instance
+          .groupTransactionsPage(groupId, limit: limit, offset: (page - 1) * limit);
+      return PagedResult(items: list.map(parseGroupTxn).toList(), hasMore: list.length == limit);
+    },
     limit: 30,
   );
 });
 
 final expenseFeedPagedProvider = StateNotifierProvider.autoDispose<
     PagedListNotifier<ExpenseModel>, PagedListState<ExpenseModel>>((ref) {
-  final repo = ref.watch(expenseRepositoryProvider);
+  ref.watch(syncRevisionProvider);
+  SyncEngine.instance.kick();
   return PagedListNotifier<ExpenseModel>(
-    fetcher: (page, limit) => repo.feedPaged(page: page, limit: limit),
+    fetcher: (page, limit) async {
+      final list = await LocalStore.instance.feedPage(limit: limit, offset: (page - 1) * limit);
+      return PagedResult(
+          items: list.map((j) => ExpenseModel.fromJson(j)).toList(), hasMore: list.length == limit);
+    },
     limit: 30,
   );
 });
 
 final monthlyAnalyticsProvider =
-    FutureProvider.autoDispose<List<MonthlyCategoryTotal>>((ref) async {
-  return ref.watch(expenseRepositoryProvider).analytics(months: 6);
+    StreamProvider.autoDispose<List<MonthlyCategoryTotal>>((ref) {
+  final myId = ref.watch(authProvider.select((s) => s.user?.id));
+  if (myId == null) return Stream.value(const <MonthlyCategoryTotal>[]);
+  return LocalStore.instance.watchMonthlyAnalyticsJson(myId).map(
+      (list) => list.map((j) => MonthlyCategoryTotal.fromJson(j)).toList());
 });
 
 final expenseDetailProvider =
-    FutureProvider.autoDispose.family<ExpenseModel, String>((ref, id) async {
-  return ref.watch(expenseRepositoryProvider).getById(id);
+    StreamProvider.autoDispose.family<ExpenseModel, String>((ref, id) {
+  SyncEngine.instance.kick();
+  return LocalStore.instance.watchExpenseJson(id).map((j) {
+    if (j == null) throw StateError('Expense not found');
+    return ExpenseModel.fromJson(j);
+  });
 });

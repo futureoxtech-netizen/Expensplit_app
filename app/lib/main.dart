@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/app.dart';
 import 'core/network/socket_service.dart';
+import 'core/services/ad_service.dart';
 import 'core/services/push_notifications_service.dart';
 import 'core/storage/hive_setup.dart';
 
@@ -16,6 +17,11 @@ Future<void> main() async {
     DeviceOrientation.portraitDown,
   ]);
   await HiveSetup.init();
+  // Initialize AdMob SDK (Android/iOS only; a no-op elsewhere). Never let an
+  // ad init failure block app startup.
+  try {
+    await AdService.instance.init();
+  } catch (_) {}
   // Fire-and-forget — OneSignal SDK init is cheap and we don't want to
   // block first frame waiting for the platform channels.
   unawaited(PushNotificationsService.instance.init());

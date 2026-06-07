@@ -1,31 +1,49 @@
+import '../../../core/db/local_store.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../core/pagination/paged_list_notifier.dart';
+import '../../../core/sync/sync_engine.dart';
 import 'goal_model.dart';
 
+/// Offline-first goals. List/create/update/delete apply to the local DB and
+/// queue a sync op. Contributions stay online (the server recomputes the saved
+/// total) and the returned goal is merged back into the local DB.
 class GoalsRepository {
   GoalsRepository(this._client);
   final DioClient _client;
+  final _store = LocalStore.instance;
+
+  Future<List<GoalModel>> _all() async {
+    final list = await _store.watchGoalsJson().first;
+    return list.map(GoalModel.fromJson).toList();
+  }
 
   Future<GoalsPage> list({String? status, int page = 1, int limit = 20}) async {
-    final params = <String, String>{'page': '$page', 'limit': '$limit'};
-    if (status != null) params['status'] = status;
-    final res = await _client.get('/goals', query: params);
-    return GoalsPage.fromJson(res as Map<String, dynamic>);
+    SyncEngine.instance.kick();
+    var items = await _all();
+    if (status != null) items = items.where((g) => g.status == status).toList();
+    final totalSaved = items.fold<double>(0, (a, g) => a + g.savedAmount);
+    final totalTarget = items.fold<double>(0, (a, g) => a + g.targetAmount);
+    final completed = items.where((g) => g.status == 'completed').length;
+    final active = items.where((g) => g.status == 'active').length;
+    return GoalsPage(
+      items: items,
+      total: items.length,
+      page: 1,
+      pages: 1,
+      totalSaved: totalSaved,
+      totalTarget: totalTarget,
+      completedCount: completed,
+      activeCount: active,
+    );
   }
 
-  Future<PagedResult<GoalModel>> listPaged({
-    String? status,
-    int page = 1,
-    int limit = 20,
-  }) async {
-    final p = await list(status: status, page: page, limit: limit);
-    return PagedResult(items: p.items, hasMore: p.hasMore);
+  Future<PagedResult<GoalModel>> listPaged({String? status, int page = 1, int limit = 20}) async {
+    final p = await list(status: status);
+    return PagedResult(items: p.items, hasMore: false);
   }
 
-  Future<GoalModel> getById(String id) async {
-    final res = await _client.get('/goals/$id');
-    return GoalModel.fromJson(res['data'] as Map<String, dynamic>);
-  }
+  Future<GoalModel> getById(String id) async =>
+      (await _all()).firstWhere((g) => g.id == id);
 
   Future<GoalModel> create({
     required String title,
@@ -39,7 +57,7 @@ class GoalsRepository {
     String color = '#6C5CE7',
     String notes = '',
   }) async {
-    final res = await _client.post('/goals', body: {
+    final id = await _store.createGoalLocal({
       'title': title,
       if (description != null) 'description': description,
       'emoji': emoji,
@@ -51,7 +69,8 @@ class GoalsRepository {
       'color': color,
       if (notes.isNotEmpty) 'notes': notes,
     });
-    return GoalModel.fromJson(res['data'] as Map<String, dynamic>);
+    SyncEngine.instance.kick();
+    return (await _all()).firstWhere((g) => g.id == id);
   }
 
   Future<GoalModel> update(
@@ -69,26 +88,30 @@ class GoalsRepository {
     String? notes,
     String? status,
   }) async {
-    final body = <String, dynamic>{};
-    if (title != null) body['title'] = title;
-    if (description != null) body['description'] = description;
-    if (emoji != null) body['emoji'] = emoji;
-    if (category != null) body['category'] = category;
-    if (targetAmount != null) body['targetAmount'] = targetAmount;
-    if (currency != null) body['currency'] = currency;
-    if (clearTargetDate) body['targetDate'] = null;
-    else if (targetDate != null) body['targetDate'] = targetDate.toIso8601String();
-    if (priority != null) body['priority'] = priority;
-    if (color != null) body['color'] = color;
-    if (notes != null) body['notes'] = notes;
-    if (status != null) body['status'] = status;
-
-    final res = await _client.patch('/goals/$id', body: body);
-    return GoalModel.fromJson(res['data'] as Map<String, dynamic>);
+    final fields = <String, dynamic>{};
+    if (title != null) fields['title'] = title;
+    if (description != null) fields['description'] = description;
+    if (emoji != null) fields['emoji'] = emoji;
+    if (category != null) fields['category'] = category;
+    if (targetAmount != null) fields['targetAmount'] = targetAmount;
+    if (currency != null) fields['currency'] = currency;
+    if (clearTargetDate) fields['targetDate'] = null;
+    else if (targetDate != null) fields['targetDate'] = targetDate.toIso8601String();
+    if (priority != null) fields['priority'] = priority;
+    if (color != null) fields['color'] = color;
+    if (notes != null) fields['notes'] = notes;
+    if (status != null) fields['status'] = status;
+    await _store.updateGoalLocal(id, fields);
+    SyncEngine.instance.kick();
+    return (await _all()).firstWhere((g) => g.id == id);
   }
 
-  Future<void> delete(String id) => _client.delete('/goals/$id');
+  Future<void> delete(String id) async {
+    await _store.deleteGoalLocal(id);
+    SyncEngine.instance.kick();
+  }
 
+  // ── Contributions stay online (server recomputes the saved total) ─────────
   Future<GoalModel> addContribution(
     String goalId, {
     required double amount,
@@ -100,7 +123,9 @@ class GoalsRepository {
       'note': note,
       if (date != null) 'date': date.toIso8601String(),
     });
-    return GoalModel.fromJson(res['data'] as Map<String, dynamic>);
+    final json = res['data'] as Map<String, dynamic>;
+    await _store.applyPull({'goals': [json]});
+    return GoalModel.fromJson(json);
   }
 
   Future<GoalModel> updateContribution(
@@ -117,13 +142,15 @@ class GoalsRepository {
     final res = await _client.patch(
         '/goals/$goalId/contributions/$contributionId',
         body: body);
-    return GoalModel.fromJson(res['data'] as Map<String, dynamic>);
+    final json = res['data'] as Map<String, dynamic>;
+    await _store.applyPull({'goals': [json]});
+    return GoalModel.fromJson(json);
   }
 
-  Future<GoalModel> removeContribution(
-      String goalId, String contributionId) async {
-    final res = await _client.delete(
-        '/goals/$goalId/contributions/$contributionId');
-    return GoalModel.fromJson(res['data'] as Map<String, dynamic>);
+  Future<GoalModel> removeContribution(String goalId, String contributionId) async {
+    final res = await _client.delete('/goals/$goalId/contributions/$contributionId');
+    final json = res['data'] as Map<String, dynamic>;
+    await _store.applyPull({'goals': [json]});
+    return GoalModel.fromJson(json);
   }
 }

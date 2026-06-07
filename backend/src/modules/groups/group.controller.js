@@ -4,7 +4,10 @@ import { groupService } from './group.service.js';
 
 export const groupController = {
   create: asyncHandler(async (req, res) => {
+    // console.log("🚀 ~ req:", req)
+    console.log("🚀 ~ req.user.id:", req.user.id)
     const group = await groupService.create({ userId: req.user.id, data: req.body });
+    console.log("🚀 ~ group:", group)
     res.status(201).json({ ok: true, data: group });
   }),
 
@@ -23,6 +26,15 @@ export const groupController = {
       userId: req.user.id,
       groupId: req.params.id,
       data: req.body,
+    });
+    res.json({ ok: true, data: group });
+  }),
+
+  updateNotes: asyncHandler(async (req, res) => {
+    const group = await groupService.updateNotes({
+      userId: req.user.id,
+      groupId: req.params.id,
+      notes: req.body.notes,
     });
     res.json({ ok: true, data: group });
   }),

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/error_messages.dart';
+import '../../../core/utils/amount_input_formatter.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../shared/widgets/app_sheet.dart';
 import '../../../shared/widgets/error_view.dart';
@@ -814,7 +815,7 @@ class _AddContributionSheetState extends ConsumerState<AddContributionSheet> {
                     hintText: '0.00',
                   ),
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d.,]'))],
+                  inputFormatters: AmountInputFormatter.list(),
                 ),
                 const SizedBox(height: 12),
 

@@ -1,5 +1,6 @@
-import '../../../core/network/dio_client.dart';
+import '../../../core/db/local_store.dart';
 import '../../../core/pagination/paged_list_notifier.dart';
+import '../../../core/sync/sync_engine.dart';
 
 class ActivityItem {
   ActivityItem({
@@ -45,19 +46,14 @@ class ActivityItem {
 }
 
 class ActivityRepository {
-  ActivityRepository(this._client);
-  final DioClient _client;
+  ActivityRepository();
+  final _store = LocalStore.instance;
 
   Future<PagedResult<ActivityItem>> feed({int page = 1, int limit = 50}) async {
-    final res = await _client.get('/activity/feed', query: {'page': page, 'limit': limit});
-    final data = res['data'] as Map<String, dynamic>;
-    final items = ((data['items'] ?? []) as List)
-        .map((e) => ActivityItem.fromJson(e as Map<String, dynamic>))
-        .toList();
+    SyncEngine.instance.kick();
+    final list = await _store.activityPage(limit: limit, offset: (page - 1) * limit);
     return PagedResult(
-      items: items,
-      hasMore: (data['hasMore'] as bool?) ?? false,
-    );
+        items: list.map((j) => ActivityItem.fromJson(j)).toList(), hasMore: list.length == limit);
   }
 
   Future<PagedResult<ActivityItem>> byGroup(
@@ -65,17 +61,9 @@ class ActivityRepository {
     int page = 1,
     int limit = 50,
   }) async {
-    final res = await _client.get(
-      '/activity/group/$groupId',
-      query: {'page': page, 'limit': limit},
-    );
-    final data = res['data'] as Map<String, dynamic>;
-    final items = ((data['items'] ?? []) as List)
-        .map((e) => ActivityItem.fromJson(e as Map<String, dynamic>))
-        .toList();
+    final list =
+        await _store.activityPage(groupId: groupId, limit: limit, offset: (page - 1) * limit);
     return PagedResult(
-      items: items,
-      hasMore: (data['hasMore'] as bool?) ?? false,
-    );
+        items: list.map((j) => ActivityItem.fromJson(j)).toList(), hasMore: list.length == limit);
   }
 }

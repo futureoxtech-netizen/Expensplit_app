@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
@@ -7,11 +5,28 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:universal_html/html.dart' as html;
 
-import '../../../core/utils/formatters.dart';
 import 'report_model.dart';
 
 class ReportExporter {
   ReportExporter._();
+
+  // Returns a PDF-safe currency symbol for the given ISO code.
+  // Only characters confirmed present in NotoSans Regular are used as symbols;
+  // problematic glyphs like ₨ (U+20A8) and ₹ (U+20B9) are not in the font
+  // and render as empty boxes, so we substitute readable ASCII equivalents.
+  static String _pdfSymbol(String code) {
+    switch (code.toUpperCase()) {
+      case 'USD': return r'$ ';
+      case 'EUR': return '\u20AC ';  // € – present in NotoSans
+      case 'GBP': return '\u00A3 ';  // £ – Latin-1, always present
+      case 'JPY': return '\u00A5 ';  // ¥ – Latin-1, always present
+      case 'CAD': return r'C$ ';
+      case 'AUD': return r'A$ ';
+      case 'PKR': return 'Rs. ';     // ₨ NOT in NotoSans – use Rs.
+      case 'INR': return 'Rs. ';     // ₹ NOT in NotoSans – use Rs.
+      default:    return '${code.toUpperCase()} ';
+    }
+  }
 
   static Future<Uint8List> buildPdf({
     required ReportData data,
@@ -20,10 +35,25 @@ class ReportExporter {
     required String userName,
   }) async {
     final df = DateFormat('MMM d, y');
-    // Load a Unicode-friendly font so currency symbols like ₨ render correctly.
-    final regular = await PdfGoogleFonts.notoSansRegular();
-    final bold = await PdfGoogleFonts.notoSansBold();
-    final italic = await PdfGoogleFonts.notoSansItalic();
+    // Load NotoSans for good Unicode coverage (€, £, ¥ etc. all present).
+    // Falls back to Helvetica if offline — fmt() always uses PDF-safe symbols
+    // so the output looks correct either way.
+    pw.Font regular, bold, italic;
+    try {
+      regular = await PdfGoogleFonts.notoSansRegular();
+      bold = await PdfGoogleFonts.notoSansBold();
+      italic = await PdfGoogleFonts.notoSansItalic();
+    } catch (_) {
+      regular = pw.Font.helvetica();
+      bold = pw.Font.helveticaBold();
+      italic = pw.Font.helveticaOblique();
+    }
+
+    // Use attractive PDF-safe symbols (see _pdfSymbol above).
+    String fmt(num amount, {String? code}) {
+      final symbol = _pdfSymbol(code ?? currency);
+      return NumberFormat.currency(symbol: symbol, decimalDigits: 2).format(amount);
+    }
     final doc = pw.Document(
       title: 'Expense Report',
       theme: pw.ThemeData.withFont(base: regular, bold: bold, italic: italic),
@@ -58,12 +88,12 @@ class ReportExporter {
                 pw.Row(
                   children: [
                     _kpiBox('Total spent',
-                        Money.format(data.totals.total, code: currency)),
+                        fmt(data.totals.total)),
                     pw.SizedBox(width: 10),
                     _kpiBox('Transactions', '${data.totals.count}'),
                     pw.SizedBox(width: 10),
                     _kpiBox('Paid by you',
-                        Money.format(data.totals.paid, code: currency)),
+                        fmt(data.totals.paid)),
                   ],
                 ),
               ],
@@ -92,7 +122,7 @@ class ReportExporter {
                 [
                   c.category,
                   c.count.toString(),
-                  Money.format(c.amount, code: currency),
+                  fmt(c.amount),
                   data.totals.total <= 0
                       ? '0%'
                       : '${(c.amount / data.totals.total * 100).toStringAsFixed(1)}%',
@@ -128,7 +158,7 @@ class ReportExporter {
                   e.groupName,
                   e.category,
                   e.paidBy,
-                  Money.format(e.amount, code: e.currency),
+                  fmt(e.amount, code: e.currency),
                 ],
             ],
           ),

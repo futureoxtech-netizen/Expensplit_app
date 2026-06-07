@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/error_messages.dart';
 import '../../../core/pagination/paged_sliver_list.dart';
+import '../../../core/utils/amount_input_formatter.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../shared/widgets/app_sheet.dart';
 import '../../../shared/widgets/avatar.dart';
@@ -317,7 +318,7 @@ class _TxnRow extends StatelessWidget {
       amtColor = isOwedToMe ? Colors.orange : AppColors.primary;
     } else {
       amtLabel = isOwedToMe ? 'you are owed' : 'you owe';
-      amtColor = isOwedToMe ? AppColors.primary : Colors.orange;
+      amtColor = isOwedToMe ? AppColors.accent : AppColors.danger;
     }
 
     Color groupColor;
@@ -487,7 +488,7 @@ class _SettleUpSheetState extends State<_SettleUpSheet> {
                 ? '${widget.friend.user.name} owes you ${Money.format(net.abs(), code: widget.currency)}'
                 : 'You owe ${widget.friend.user.name} ${Money.format(net.abs(), code: widget.currency)}',
             style: TextStyle(
-                color: isOwed ? AppColors.primary : Colors.orange,
+                color: isOwed ? AppColors.accent : AppColors.danger,
                 fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 16),
@@ -495,6 +496,7 @@ class _SettleUpSheetState extends State<_SettleUpSheet> {
           TextFormField(
             controller: _amountCtrl,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: AmountInputFormatter.list(),
             decoration: InputDecoration(
               labelText: 'Amount',
               prefixText: '${widget.currency} ',

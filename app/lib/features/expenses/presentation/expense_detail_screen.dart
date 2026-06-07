@@ -95,22 +95,76 @@ class ExpenseDetailScreen extends ConsumerWidget {
                   const Text('Total',
                       style: TextStyle(color: Colors.white70, fontSize: 13)),
                   const SizedBox(height: 4),
-                  Text(
-                    Money.format(e.amount, code: e.currency),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 30,
-                      fontWeight: FontWeight.w800,
+                  // Scale large amounts down to fit on one line instead of
+                  // overflowing / wrapping.
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      Money.format(e.amount, code: e.currency),
+                      maxLines: 1,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 30,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Paid by ${e.paidBy.name} · ${e.splitMode} split',
+                    e.hasMultiplePayers
+                        ? 'Paid by ${e.payers.length} people · ${e.splitMode} split'
+                        : 'Paid by ${e.paidBy.name} · ${e.splitMode} split',
                     style: const TextStyle(color: Colors.white70),
                   ),
                 ],
               ),
             ),
+            if (e.hasMultiplePayers) ...[
+              const SizedBox(height: 20),
+              const Text('Paid by',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 10),
+              for (final p in e.payers)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).cardTheme.color,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Theme.of(context).dividerColor),
+                  ),
+                  child: Row(
+                    children: [
+                      Avatar(
+                          name: p.user.name,
+                          imageUrl: p.user.avatarUrl,
+                          size: 34),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          p.user.name.isEmpty ? p.user.email : p.user.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            Money.format(p.amount, code: e.currency),
+                            maxLines: 1,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
             const SizedBox(height: 20),
             const Text('Shares',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
@@ -135,12 +189,22 @@ class ExpenseDetailScreen extends ConsumerWidget {
                       child: Text(
                         s.user.name +
                             (me != null && me.id == s.user.id ? ' (you)' : ''),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
                     ),
-                    Text(
-                      Money.format(s.amount, code: e.currency),
-                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          Money.format(s.amount, code: e.currency),
+                          maxLines: 1,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
                     ),
                   ],
                 ),

@@ -9,6 +9,8 @@ import personalRoutes from '../modules/personal/personal.routes.js';
 import goalRoutes from '../modules/goals/goal.routes.js';
 import reactionRoutes from '../modules/reactions/reaction.routes.js';
 import uploadRoutes from '../modules/uploads/upload.routes.js';
+import appConfigRoutes from '../modules/appConfig/appConfig.routes.js';
+import syncRoutes from '../modules/sync/sync.routes.js';
 
 export const router = Router();
 
@@ -31,3 +33,5 @@ router.use('/personal-expenses', personalRoutes);
 router.use('/goals', goalRoutes);
 router.use('/reactions', reactionRoutes);
 router.use('/uploads', uploadRoutes);
+router.use('/app', appConfigRoutes);
+router.use('/sync', syncRoutes);

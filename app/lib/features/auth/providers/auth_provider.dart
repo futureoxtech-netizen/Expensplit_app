@@ -3,11 +3,13 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/db/local_store.dart';
 import '../../../core/errors/error_messages.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../core/network/realtime.dart';
 import '../../../core/services/push_notifications_service.dart';
 import '../../../core/storage/token_storage.dart';
+import '../../../core/sync/sync_engine.dart';
 import '../data/auth_repository.dart';
 import '../data/user_model.dart';
 
@@ -54,6 +56,18 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }).catchError((_) {});
     _realtime.bootstrap();
     PushNotificationsService.instance.loginUser(cached.id);
+    _onAuthenticated(cached);
+  }
+
+  /// Record the signed-in user for the offline layer and start syncing.
+  void _onAuthenticated(UserModel user) {
+    LocalStore.instance.setCurrentUser({
+      '_id': user.id,
+      'name': user.name,
+      'email': user.email,
+      'avatarUrl': user.avatarUrl,
+    });
+    SyncEngine.instance.start();
   }
 
   Future<void> sendOtp(String email) async {
@@ -68,6 +82,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       await _realtime.bootstrap();
       await PushNotificationsService.instance.requestPermission();
       await PushNotificationsService.instance.loginUser(user.id);
+      _onAuthenticated(user);
     } catch (e) {
       state = state.copyWith(error: _errorMessage(e));
       rethrow;
@@ -94,6 +109,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       await _realtime.bootstrap();
       await PushNotificationsService.instance.requestPermission();
       await PushNotificationsService.instance.loginUser(user.id);
+      _onAuthenticated(user);
     } catch (e) {
       state = state.copyWith(error: _errorMessage(e));
       rethrow;
@@ -108,6 +124,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       await _realtime.bootstrap();
       await PushNotificationsService.instance.requestPermission();
       await PushNotificationsService.instance.loginUser(user.id);
+      _onAuthenticated(user);
     } catch (e) {
       state = state.copyWith(error: _errorMessage(e));
       rethrow;
@@ -115,10 +132,23 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> logout() async {
+    // Best-effort flush of pending offline writes while we're still
+    // authenticated, so a user who edited offline then logs out doesn't lose
+    // those changes. Ignored if offline.
+    try {
+      await SyncEngine.instance.sync();
+    } catch (_) {}
     await _repo.logout();
     _realtime.disconnect();
     await PushNotificationsService.instance.logoutUser();
+    await _teardownOffline();
     state = const AuthState(status: AuthStatus.unauthenticated);
+  }
+
+  /// Stop syncing and clear the local DB so the next account starts clean.
+  Future<void> _teardownOffline() async {
+    SyncEngine.instance.stop();
+    await LocalStore.instance.wipe();
   }
 
   /// Called by the network layer when refresh is no longer possible (refresh
@@ -129,6 +159,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     _realtime.disconnect();
     await TokenStorage.instance.clear();
     await PushNotificationsService.instance.logoutUser();
+    await _teardownOffline();
     state = const AuthState(status: AuthStatus.unauthenticated);
   }
 
@@ -190,6 +221,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     await _repo.googleSignOut();
     _realtime.disconnect();
     await PushNotificationsService.instance.logoutUser();
+    await _teardownOffline();
     state = const AuthState(status: AuthStatus.unauthenticated);
   }
 

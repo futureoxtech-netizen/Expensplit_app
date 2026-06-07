@@ -11,8 +11,14 @@ const settlementSchema = new mongoose.Schema(
     note: { type: String, default: '' },
     settledAt: { type: Date, default: Date.now },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    clientOpId: { type: String, default: null },
   },
   { timestamps: true },
+);
+
+settlementSchema.index(
+  { clientOpId: 1 },
+  { unique: true, partialFilterExpression: { clientOpId: { $type: 'string' } } },
 );
 
 export const Settlement = mongoose.model('Settlement', settlementSchema);

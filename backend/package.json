@@ -8,6 +8,7 @@
     "dev": "nodemon server.js",
     "start": "node server.js",
     "seed": "node src/seed/seed.js",
+    "seed:config": "node src/seed/appConfig.seed.js",
     "lint": "eslint .",
     "test": "node --test"
   },

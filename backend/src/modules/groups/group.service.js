@@ -11,6 +11,8 @@ import { emitToGroup } from '../../socket/index.js';
 import { activityService } from '../activity/activity.service.js';
 import { notifyUser, notifyUsers, notifyGroup, actorName } from '../../services/notifications.service.js';
 import { deleteManyFromS3 } from '../../middleware/upload.js';
+import { effectivePayers } from '../../utils/expensePayers.js';
+import { recordTombstone } from '../sync/tombstone.model.js';
 
 // Populate spec shared by every method that returns a group to the client, so
 // members *and* pending members always arrive with their user details filled
@@ -39,7 +41,9 @@ async function memberNetBalance(group, memberId) {
   ]);
   let net = 0;
   for (const exp of expenses) {
-    if (exp.paidBy && exp.paidBy.toString() === id) net += exp.amount;
+    for (const p of effectivePayers(exp)) {
+      if (p.user && p.user.toString() === id) net += p.amount;
+    }
     for (const s of exp.shares) {
       if (s.user && s.user.toString() === id) net -= s.amount;
     }
@@ -84,6 +88,11 @@ async function purgeGroup(group) {
 
 export const groupService = {
   async create({ userId, data }) {
+    // Idempotent replay for offline-first sync.
+    if (data.clientOpId) {
+      const dup = await Group.findOne({ clientOpId: data.clientOpId }).populate(GROUP_POPULATE);
+      if (dup) return dup;
+    }
     const members = [{ user: userId, role: 'owner' }];
     const pendingMembers = [];
     const addedIds = [];
@@ -199,6 +208,26 @@ export const groupService = {
     if (!['owner', 'admin'].includes(role)) throw Forbidden('Only admins can update the group');
     Object.assign(group, data);
     await group.save();
+    return group.populate(GROUP_POPULATE);
+  },
+
+  // Group notes are a shared notepad any member can edit (Splitwise-style).
+  async updateNotes({ userId, groupId, notes }) {
+    const group = await findGroupForMember(groupId, userId);
+    const trimmed = (notes ?? '').trim();
+    const changed = group.notes !== trimmed;
+    group.notes = trimmed;
+    await group.save();
+
+    if (changed) {
+      await activityService.log({
+        groupId: group._id,
+        actor: userId,
+        type: 'group.notes',
+        message: trimmed ? 'updated the group notes' : 'cleared the group notes',
+      });
+      emitToGroup(group._id, 'group:updated', { groupId: group._id.toString() });
+    }
     return group.populate(GROUP_POPULATE);
   },
 
@@ -470,6 +499,15 @@ export const groupService = {
     }
 
     emitToGroup(group._id, 'group:updated', { groupId: group._id.toString() });
+    // The removed member should drop the whole group from their offline DB.
+    if (!target.isPlaceholder) {
+      recordTombstone({
+        entityType: 'group',
+        entityId: group._id,
+        groupId: group._id,
+        users: [memberId],
+      }).catch(() => {});
+    }
     return group.populate(GROUP_POPULATE);
   },
 
@@ -575,6 +613,13 @@ export const groupService = {
       message: `${user?.name ?? 'A member'} left the group`,
     });
     emitToGroup(group._id, 'group:updated', { groupId: group._id.toString() });
+    // The leaver drops the group from their offline DB on next sync.
+    recordTombstone({
+      entityType: 'group',
+      entityId: group._id,
+      groupId: group._id,
+      users: [userId],
+    }).catch(() => {});
 
     if (newOwnerId) {
       notifyUser(newOwnerId, {
@@ -609,6 +654,14 @@ export const groupService = {
       .filter((id) => id !== userId.toString());
 
     emitToGroup(group._id, 'group:deleted', { groupId: group._id.toString() });
+    // One group tombstone is enough: clients cascade-delete the group's local
+    // expenses/settlements/members/activity when they see it.
+    recordTombstone({
+      entityType: 'group',
+      entityId: group._id,
+      groupId: group._id,
+      users: group.members.map((m) => m.user),
+    }).catch(() => {});
     await purgeGroup(group);
 
     if (otherMemberIds.length) {
@@ -639,8 +692,10 @@ export const groupService = {
     for (const m of group.members) ensure(m.user);
 
     for (const exp of expenses) {
-      const payerKey = ensure(exp.paidBy);
-      totals.set(payerKey, totals.get(payerKey) + exp.amount);
+      for (const p of effectivePayers(exp)) {
+        const payerKey = ensure(p.user);
+        totals.set(payerKey, totals.get(payerKey) + p.amount);
+      }
       for (const share of exp.shares) {
         const k = ensure(share.user);
         totals.set(k, totals.get(k) - share.amount);

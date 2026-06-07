@@ -1,13 +1,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/network/dio_client.dart';
 import '../../../core/pagination/paged_list_notifier.dart';
+import '../../../core/sync/sync_providers.dart';
 import '../data/personal_expense_model.dart';
 import '../data/personal_expense_repository.dart';
 
 final personalExpenseRepositoryProvider =
     Provider<PersonalExpenseRepository>(
-  (ref) => PersonalExpenseRepository(DioClient.instance),
+  (ref) => PersonalExpenseRepository(),
 );
 
 /// Aggregating provider — walks all pages and returns the full set for the
@@ -16,6 +16,7 @@ final personalExpenseRepositoryProvider =
 final personalExpenseListProvider = FutureProvider.family<
     List<PersonalExpenseModel>, (DateTime from, DateTime to)>(
   (ref, range) async {
+    ref.watch(syncRevisionProvider); // reload after each server pull
     final repo = ref.read(personalExpenseRepositoryProvider);
     return repo.list(from: range.$1, to: range.$2);
   },
@@ -28,6 +29,7 @@ final personalExpensesPagedProvider = StateNotifierProvider.autoDispose.family<
     PagedListNotifier<PersonalExpenseModel>,
     PagedListState<PersonalExpenseModel>,
     (DateTime, DateTime)>((ref, range) {
+  ref.watch(syncRevisionProvider);
   final repo = ref.watch(personalExpenseRepositoryProvider);
   return PagedListNotifier<PersonalExpenseModel>(
     fetcher: (page, limit) => repo.listPaged(
@@ -43,6 +45,7 @@ final personalExpensesPagedProvider = StateNotifierProvider.autoDispose.family<
 // Summary for chart
 final personalSummaryProvider =
     FutureProvider<List<PersonalSummaryRow>>((ref) async {
+  ref.watch(syncRevisionProvider);
   final repo = ref.read(personalExpenseRepositoryProvider);
   return repo.summary(months: 3);
 });

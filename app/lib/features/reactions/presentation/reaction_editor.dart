@@ -122,12 +122,20 @@ class _ReactionEditorState extends ConsumerState<ReactionEditor> {
 
   void _showViewers() {
     final reactions = _current;
-    if (reactions.isEmpty) return;
+    if (reactions.isEmpty) {
+      // Nothing to show yet — offer to add one instead.
+      _openPicker();
+      return;
+    }
     showAppFixedSheet<void>(
       context: context,
       builder: (_) => _ReactionViewersSheet(
         reactions: reactions,
         myId: _me?.id,
+        onRemoveMine: (emoji) {
+          Navigator.of(context).pop();
+          _toggle(emoji); // toggling the emoji you reacted with removes it
+        },
       ),
     );
   }
@@ -174,8 +182,7 @@ class _ReactionEditorState extends ConsumerState<ReactionEditor> {
             child: _OverlapCluster(
               reactions: reactions,
               myId: me?.id,
-              onToggle: me == null ? null : _toggle,
-              onLongPress: _showViewers,
+              onShowViewers: _showViewers,
             ),
           ),
         ],
@@ -196,7 +203,8 @@ class _ReactionEditorState extends ConsumerState<ReactionEditor> {
             emoji: r.emoji,
             count: r.count,
             mine: r.mineFor(me?.id),
-            onTap: me == null ? null : () => _toggle(r.emoji),
+            // WhatsApp-style: a single tap opens the "who reacted" list.
+            onTap: _showViewers,
             onLongPress: _showViewers,
           ),
         if (me != null)
@@ -213,14 +221,12 @@ class _OverlapCluster extends StatelessWidget {
   const _OverlapCluster({
     required this.reactions,
     required this.myId,
-    required this.onToggle,
-    required this.onLongPress,
+    required this.onShowViewers,
   });
 
   final List<ReactionSummary> reactions;
   final String? myId;
-  final void Function(String emoji)? onToggle;
-  final VoidCallback onLongPress;
+  final VoidCallback onShowViewers;
 
   @override
   Widget build(BuildContext context) {
@@ -235,8 +241,9 @@ class _OverlapCluster extends StatelessWidget {
               count: r.count,
               mine: r.mineFor(myId),
               elevated: true,
-              onTap: onToggle == null ? null : () => onToggle!(r.emoji),
-              onLongPress: onLongPress,
+              // Single tap → who reacted (WhatsApp-style).
+              onTap: onShowViewers,
+              onLongPress: onShowViewers,
             ),
           ),
       ],
@@ -361,16 +368,22 @@ class _AddReactionButton extends StatelessWidget {
   }
 }
 
-/// Bottom sheet listing who reacted, grouped by emoji — opened by long-pressing
-/// a reaction chip.
+/// Bottom sheet listing who reacted, grouped by emoji — opened by a single tap
+/// on a reaction chip (WhatsApp-style). Tapping your own row removes it.
 class _ReactionViewersSheet extends StatelessWidget {
-  const _ReactionViewersSheet({required this.reactions, required this.myId});
+  const _ReactionViewersSheet({
+    required this.reactions,
+    required this.myId,
+    this.onRemoveMine,
+  });
 
   final List<ReactionSummary> reactions;
   final String? myId;
+  final void Function(String emoji)? onRemoveMine;
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     final total = reactions.fold<int>(0, (a, r) => a + r.count);
     return SingleChildScrollView(
       child: Padding(
@@ -387,24 +400,46 @@ class _ReactionViewersSheet extends StatelessWidget {
             const SizedBox(height: 12),
             for (final r in reactions)
               for (final u in r.users)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Row(
-                    children: [
-                      Avatar(name: u.name, imageUrl: u.avatarUrl, size: 36),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          u.name.isEmpty
-                              ? 'Someone'
-                              : (u.id == myId ? '${u.name} (you)' : u.name),
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
+                Builder(builder: (context) {
+                  final isMine = u.id == myId;
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: isMine && onRemoveMine != null
+                        ? () => onRemoveMine!(r.emoji)
+                        : null,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Row(
+                        children: [
+                          Avatar(name: u.name, imageUrl: u.avatarUrl, size: 36),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  u.name.isEmpty
+                                      ? 'Someone'
+                                      : (isMine ? '${u.name} (you)' : u.name),
+                                  style: const TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                                if (isMine && onRemoveMine != null)
+                                  Text(
+                                    'Tap to remove',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: cs.onSurface.withOpacity(0.5),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          Text(r.emoji, style: const TextStyle(fontSize: 20)),
+                        ],
                       ),
-                      Text(r.emoji, style: const TextStyle(fontSize: 20)),
-                    ],
-                  ),
-                ),
+                    ),
+                  );
+                }),
           ],
         ),
       ),

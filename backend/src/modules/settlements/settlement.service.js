@@ -16,6 +16,11 @@ async function assertMember(groupId, userId) {
 
 export const settlementService = {
   async create({ userId, payload }) {
+    // Idempotent replay for offline-first sync.
+    if (payload.clientOpId) {
+      const dup = await Settlement.findOne({ clientOpId: payload.clientOpId }).populate(['from', 'to']);
+      if (dup) return dup;
+    }
     if (payload.amount <= 0) throw BadRequest('Amount must be positive');
     if (payload.from === payload.to) throw BadRequest('from and to must differ');
     const group = await assertMember(payload.groupId, userId);
@@ -32,6 +37,7 @@ export const settlementService = {
       note: payload.note || '',
       settledAt: payload.settledAt || new Date(),
       createdBy: userId,
+      clientOpId: payload.clientOpId || null,
     });
     await activityService.log({
       groupId: group._id,

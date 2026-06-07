@@ -4,10 +4,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'router/app_router.dart';
 import 'theme/app_theme.dart';
+import '../core/network/connectivity_service.dart';
 import '../core/network/dio_client.dart';
 import '../core/network/realtime.dart';
+import '../core/services/ad_service.dart';
 import '../core/services/in_app_banner.dart';
 import '../core/services/push_notifications_service.dart';
+import '../core/sync/sync_engine.dart';
+import '../features/app_update/app_update_provider.dart';
+import '../features/app_update/maintenance_provider.dart';
+import '../features/app_update/presentation/maintenance_screen.dart';
+import '../features/app_update/presentation/update_dialog.dart';
 import '../features/auth/providers/auth_provider.dart';
 import '../features/settings/settings_providers.dart';
 
@@ -31,6 +38,20 @@ class _ExpenseAppState extends ConsumerState<ExpenseApp> with WidgetsBindingObse
       if (!mounted) return;
       ref.read(authProvider.notifier).forceLogout();
     });
+    // Check for app updates on launch and surface a soft/forced prompt.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkForUpdate());
+  }
+
+  bool _updatePrompted = false;
+
+  Future<void> _checkForUpdate() async {
+    if (_updatePrompted) return;
+    final info = await ref.read(appUpdateCheckProvider.future);
+    if (!mounted || info == null || !info.shouldPrompt) return;
+    final navContext = rootNavigatorKey.currentContext;
+    if (navContext == null) return;
+    _updatePrompted = true;
+    await showAppUpdateDialog(navContext, info);
   }
 
   @override
@@ -49,6 +70,9 @@ class _ExpenseAppState extends ConsumerState<ExpenseApp> with WidgetsBindingObse
       final authState = ref.read(authProvider);
       if (authState.status == AuthStatus.authenticated) {
         ref.read(realtimeBridgeProvider).bootstrap();
+        SyncEngine.instance.kick();
+        // Show the App Open ad every time the app comes back to foreground.
+        AdService.instance.showAppOpenAd();
       }
     }
   }
@@ -78,6 +102,72 @@ class _ExpenseAppState extends ConsumerState<ExpenseApp> with WidgetsBindingObse
       darkTheme: AppTheme.dark(),
       themeMode: themeMode,
       routerConfig: router,
+      builder: (context, child) => _AppGate(child: child),
+    );
+  }
+}
+
+/// Top-level gate wrapping the whole app: shows the blocking maintenance screen
+/// when the backend switch is on, otherwise the app + offline banner.
+class _AppGate extends ConsumerWidget {
+  const _AppGate({required this.child});
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final info = ref.watch(maintenanceProvider).valueOrNull;
+    if (info?.maintenance == true) {
+      return MaintenanceScreen(message: info!.maintenanceMessage);
+    }
+    return _OfflineScaffold(child: child);
+  }
+}
+
+/// Wraps the app with a slim "offline" banner pinned to the bottom that appears
+/// whenever connectivity drops. Local writes keep working — they sync when the
+/// connection returns.
+class _OfflineScaffold extends ConsumerWidget {
+  const _OfflineScaffold({required this.child});
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final online = ref.watch(onlineProvider).valueOrNull ?? true;
+    return Stack(
+      children: [
+        if (child != null) child!,
+        if (!online)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Material(
+              color: Colors.transparent,
+              child: SafeArea(
+                top: false,
+                child: Container(
+                  width: double.infinity,
+                  color: const Color(0xFF2D2D3A),
+                  padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.cloud_off_rounded, size: 15, color: Colors.white70),
+                      SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          "You're offline — changes will sync automatically",
+                          style: TextStyle(color: Colors.white70, fontSize: 12),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

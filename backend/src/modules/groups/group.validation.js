@@ -8,10 +8,15 @@ export const createGroupSchema = z.object({
   icon: z.string().optional(),
   currency: z.string().length(3).optional(),
   memberEmails: z.array(z.string().email()).optional().default([]),
+  clientOpId: z.string().max(64).optional(),
 });
 
 export const updateGroupSchema = createGroupSchema.partial();
 
 export const joinByCodeSchema = z.object({
   code: z.string().min(4).max(20),
+});
+
+export const updateNotesSchema = z.object({
+  notes: z.string().max(2000),
 });

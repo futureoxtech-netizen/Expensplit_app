@@ -11,4 +11,5 @@ export const createSettlementSchema = z.object({
   method: z.enum(['cash', 'bank', 'upi', 'other']).optional(),
   note: z.string().max(280).optional(),
   settledAt: z.coerce.date().optional(),
+  clientOpId: z.string().max(64).optional(),
 });

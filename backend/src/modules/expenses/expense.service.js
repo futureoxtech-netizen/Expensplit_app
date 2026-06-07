@@ -9,6 +9,8 @@ import { activityService } from '../activity/activity.service.js';
 import { notifyUsers, actorName } from '../../services/notifications.service.js';
 import { reactionService } from '../reactions/reaction.service.js';
 import { deleteFromS3 } from '../../middleware/upload.js';
+import { effectivePayers } from '../../utils/expensePayers.js';
+import { recordTombstone } from '../sync/tombstone.model.js';
 
 async function getGroupAsMember(groupId, userId) {
   if (!mongoose.isValidObjectId(groupId)) throw NotFound('Group not found');
@@ -44,6 +46,11 @@ function sanitiseExpense(exp) {
       s.user ? s : { ...s, user: ghostFromSnapshot(s.userSnapshot) },
     );
   }
+  if (Array.isArray(obj.payers)) {
+    obj.payers = obj.payers.map((p) =>
+      p.user ? p : { ...p, user: GHOST_USER },
+    );
+  }
   return obj;
 }
 
@@ -56,15 +63,58 @@ function ensureSplitMembersInGroup(group, splits) {
   }
 }
 
-export const expenseService = {
-  async create({ userId, payload }) {
-    const group = await getGroupAsMember(payload.groupId, userId);
-    if (!group.isMember(payload.paidBy)) {
+const round2 = (n) => Math.round(n * 100) / 100;
+
+// Normalises payer input into `{ paidBy, payers }`. Single-payer expenses get
+// `payers: []` and `paidBy` set to the one payer. Multi-payer expenses get a
+// populated `payers` array (amounts must sum to `total`) and `paidBy` mirroring
+// the largest contributor so legacy single-payer reads stay sensible.
+function resolvePayers(group, payload, total) {
+  const memberIds = new Set(group.members.map((m) => m.user.toString()));
+  const raw = Array.isArray(payload.payers) ? payload.payers : [];
+  const nonZero = raw.filter((p) => p && Number(p.amount) > 0);
+
+  // Fewer than two real contributors → single-payer path.
+  if (nonZero.length <= 1) {
+    const single = nonZero[0]?.userId ?? payload.paidBy;
+    if (!single || !memberIds.has(single.toString())) {
       throw BadRequest('Payer must be a group member');
     }
+    return { paidBy: single, payers: [] };
+  }
+
+  for (const p of nonZero) {
+    if (!memberIds.has(p.userId.toString())) {
+      throw BadRequest('All payers must be group members');
+    }
+  }
+  const sum = nonZero.reduce((a, p) => a + Number(p.amount), 0);
+  if (Math.abs(sum - total) > 0.01) {
+    throw BadRequest(
+      `Payer amounts must add up to the total (${round2(sum)} of ${round2(total)})`,
+      'PAYERS_MISMATCH',
+    );
+  }
+  const payers = nonZero.map((p) => ({ user: p.userId, amount: round2(Number(p.amount)) }));
+  const primary = payers.reduce((a, b) => (b.amount > a.amount ? b : a), payers[0]);
+  return { paidBy: primary.user, payers };
+}
+
+export const expenseService = {
+  async create({ userId, payload }) {
+    // Idempotent replay: a retried offline-create returns the existing doc.
+    if (payload.clientOpId) {
+      const dup = await Expense.findOne({ clientOpId: payload.clientOpId })
+        .populate('paidBy', 'name email avatarUrl')
+        .populate('payers.user', 'name email avatarUrl')
+        .populate('shares.user', 'name email avatarUrl');
+      if (dup) return sanitiseExpense(dup);
+    }
+    const group = await getGroupAsMember(payload.groupId, userId);
     ensureSplitMembersInGroup(group, payload.splits);
 
     const totalWithExtras = Number(payload.amount) + Number(payload.tax || 0) + Number(payload.tip || 0);
+    const { paidBy, payers } = resolvePayers(group, payload, totalWithExtras);
     const shares = computeShares({
       total: totalWithExtras,
       mode: payload.splitMode,
@@ -79,7 +129,8 @@ export const expenseService = {
       currency: payload.currency || group.currency,
       category: payload.category || 'other',
       splitMode: payload.splitMode,
-      paidBy: payload.paidBy,
+      paidBy,
+      payers,
       shares: shares.map((s) => ({ user: s.userId, amount: s.amount })),
       tax: payload.tax || 0,
       tip: payload.tip || 0,
@@ -89,6 +140,7 @@ export const expenseService = {
         ? { enabled: payload.recurring.enabled, cadence: payload.recurring.cadence || 'monthly' }
         : { enabled: false },
       createdBy: userId,
+      clientOpId: payload.clientOpId || null,
     });
 
     await activityService.log({
@@ -104,7 +156,7 @@ export const expenseService = {
     // Notify everybody in the group who is *involved* in the expense —
     // i.e. the payer + every sharer — except the actor who just added it.
     const recipientIds = new Set([
-      expense.paidBy.toString(),
+      ...effectivePayers(expense).map((p) => p.user.toString()),
       ...expense.shares.map((s) => s.user.toString()),
     ]);
     recipientIds.delete(userId.toString());
@@ -125,7 +177,7 @@ export const expenseService = {
       ).catch(() => {});
     }
 
-    const populated = await expense.populate(['paidBy', 'shares.user', 'createdBy']);
+    const populated = await expense.populate(['paidBy', 'payers.user', 'shares.user', 'createdBy']);
     return sanitiseExpense(populated);
   },
 
@@ -138,6 +190,7 @@ export const expenseService = {
         .skip(skip)
         .limit(limit)
         .populate('paidBy', 'name email avatarUrl')
+        .populate('payers.user', 'name email avatarUrl')
         .populate('shares.user', 'name email avatarUrl')
         .lean(),
       Expense.countDocuments({ group: group._id, deletedAt: null }),
@@ -163,6 +216,7 @@ export const expenseService = {
       Expense.find({ group: group._id, deletedAt: null })
         .sort({ spentAt: -1 })
         .populate('paidBy', 'name email avatarUrl')
+        .populate('payers.user', 'name email avatarUrl')
         .populate('shares.user', 'name email avatarUrl')
         .lean(),
       Settlement.find({ group: group._id })
@@ -235,6 +289,7 @@ export const expenseService = {
   async getById({ userId, expenseId }) {
     const expense = await Expense.findById(expenseId)
       .populate('paidBy', 'name email avatarUrl')
+      .populate('payers.user', 'name email avatarUrl')
       .populate('shares.user', 'name email avatarUrl');
     if (!expense || expense.deletedAt) throw NotFound('Expense not found');
     await getGroupAsMember(expense.group, userId);
@@ -275,8 +330,19 @@ export const expenseService = {
       expense.shares = shares.map((s) => ({ user: s.userId, amount: s.amount }));
     }
     const oldReceipt = expense.receiptUrl;
-    for (const field of ['description', 'notes', 'currency', 'category', 'paidBy', 'receiptUrl', 'spentAt']) {
+    for (const field of ['description', 'notes', 'currency', 'category', 'receiptUrl', 'spentAt']) {
       if (patch[field] !== undefined) expense[field] = patch[field];
+    }
+    // Re-resolve the payer(s) against the current total. Honours a multi-payer
+    // `payers` breakdown when supplied, otherwise a single `paidBy`.
+    if (patch.payers !== undefined || patch.paidBy !== undefined) {
+      const { paidBy, payers } = resolvePayers(
+        group,
+        { payers: patch.payers, paidBy: patch.paidBy ?? expense.paidBy.toString() },
+        expense.amount,
+      );
+      expense.paidBy = paidBy;
+      expense.payers = payers;
     }
     await expense.save();
 
@@ -344,7 +410,7 @@ export const expenseService = {
       ).catch(() => {});
     }
 
-    const updatedPopulated = await expense.populate(['paidBy', 'shares.user']);
+    const updatedPopulated = await expense.populate(['paidBy', 'payers.user', 'shares.user']);
     return sanitiseExpense(updatedPopulated);
   },
 
@@ -367,6 +433,14 @@ export const expenseService = {
       meta: { expenseId: expense._id.toString(), description: expense.description, amount: expense.amount, currency: expense.currency },
     });
     emitToGroup(group._id, 'expense:deleted', { groupId: group._id.toString(), expenseId: expense._id.toString() });
+
+    // Tombstone so every group member's offline DB drops this expense on sync.
+    recordTombstone({
+      entityType: 'expense',
+      entityId: expense._id,
+      groupId: group._id,
+      users: group.members.map((m) => m.user),
+    }).catch(() => {});
 
     const recipients = new Set([
       expense.paidBy.toString(),
@@ -467,7 +541,29 @@ export const expenseService = {
             count: { $sum: 1 },
             paid: {
               $sum: {
-                $cond: [{ $eq: ['$paidBy', userObj] }, '$amount', 0],
+                $let: {
+                  vars: {
+                    fromPayers: {
+                      $reduce: {
+                        input: { $ifNull: ['$payers', []] },
+                        initialValue: 0,
+                        in: {
+                          $add: [
+                            '$$value',
+                            { $cond: [{ $eq: ['$$this.user', userObj] }, '$$this.amount', 0] },
+                          ],
+                        },
+                      },
+                    },
+                  },
+                  in: {
+                    $cond: [
+                      { $gt: [{ $size: { $ifNull: ['$payers', []] } }, 0] },
+                      '$$fromPayers',
+                      { $cond: [{ $eq: ['$paidBy', userObj] }, '$amount', 0] },
+                    ],
+                  },
+                },
               },
             },
           },

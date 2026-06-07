@@ -1,4 +1,6 @@
+import '../../../core/db/local_store.dart';
 import '../../../core/network/dio_client.dart';
+import '../../../core/sync/sync_engine.dart';
 import 'group_model.dart';
 
 /// Result of adding someone to a group. [status] is one of:
@@ -16,13 +18,11 @@ class AddMemberOutcome {
 class GroupRepository {
   GroupRepository(this._client);
   final DioClient _client;
+  final _store = LocalStore.instance;
 
   Future<List<GroupModel>> list() async {
-    final res = await _client.get('/groups');
-    final data = res['data'] as List;
-    return data
-        .map((j) => GroupModel.fromJson(j as Map<String, dynamic>))
-        .toList();
+    final list = await _store.watchGroupsJson().first;
+    return list.map((j) => GroupModel.fromJson(j)).toList();
   }
 
   Future<GroupModel> create({
@@ -33,21 +33,20 @@ class GroupRepository {
     String? currency,
     List<String> memberEmails = const [],
   }) async {
-    final res = await _client.post('/groups', body: {
-      'name': name,
-      'description': description,
-      'category': category,
-      if (coverColor != null) 'coverColor': coverColor,
-      if (currency != null) 'currency': currency,
-      'memberEmails': memberEmails,
-    });
-    return GroupModel.fromJson(res['data'] as Map<String, dynamic>);
+    final id = await _store.createGroupLocal(
+      name: name,
+      description: description,
+      category: category,
+      coverColor: coverColor,
+      currency: currency,
+      memberEmails: memberEmails,
+    );
+    SyncEngine.instance.kick();
+    return GroupModel.fromJson((await _store.watchGroupJson(id).first)!);
   }
 
-  Future<GroupModel> getById(String id) async {
-    final res = await _client.get('/groups/$id');
-    return GroupModel.fromJson(res['data'] as Map<String, dynamic>);
-  }
+  Future<GroupModel> getById(String id) async =>
+      GroupModel.fromJson((await _store.watchGroupJson(id).first)!);
 
   Future<GroupModel> update(
     String id, {
@@ -57,26 +56,41 @@ class GroupRepository {
     String? coverColor,
     String? currency,
   }) async {
-    final res = await _client.patch('/groups/$id', body: {
+    await _store.updateGroupLocal(id, {
       if (name != null) 'name': name,
       if (description != null) 'description': description,
       if (category != null) 'category': category,
       if (coverColor != null) 'coverColor': coverColor,
       if (currency != null) 'currency': currency,
     });
-    return GroupModel.fromJson(res['data'] as Map<String, dynamic>);
+    SyncEngine.instance.kick();
+    return GroupModel.fromJson((await _store.watchGroupJson(id).first)!);
   }
 
+  /// Update the group's shared notes (any member can edit) — offline-first.
+  Future<GroupModel> updateNotes(String id, String notes) async {
+    await _store.updateGroupNotesLocal(id, notes);
+    SyncEngine.instance.kick();
+    return GroupModel.fromJson((await _store.watchGroupJson(id).first)!);
+  }
+
+  // ── Online-only membership ops (need the server); they upsert the returned
+  //    group into the local DB so screens reflect the change immediately. ──
   Future<GroupModel> joinByCode(String code) async {
     final res = await _client.post('/groups/join', body: {'code': code});
-    return GroupModel.fromJson(res['data'] as Map<String, dynamic>);
+    final json = res['data'] as Map<String, dynamic>;
+    await _store.applyPull({'groups': [json]});
+    SyncEngine.instance.kick();
+    return GroupModel.fromJson(json);
   }
 
   Future<AddMemberOutcome> addMember(String groupId, String email) async {
     final res =
         await _client.post('/groups/$groupId/members', body: {'email': email});
+    final json = res['data'] as Map<String, dynamic>;
+    await _store.applyPull({'groups': [json]});
     return AddMemberOutcome(
-      group: GroupModel.fromJson(res['data'] as Map<String, dynamic>),
+      group: GroupModel.fromJson(json),
       status: (res['status'] ?? 'added').toString(),
     );
   }
@@ -108,14 +122,18 @@ class GroupRepository {
       '/groups/$groupId/placeholders',
       body: {'name': name},
     );
-    return GroupModel.fromJson(res['data'] as Map<String, dynamic>);
+    final json = res['data'] as Map<String, dynamic>;
+    await _store.applyPull({'groups': [json]});
+    return GroupModel.fromJson(json);
   }
 
   /// Remove a member from the group. Used for guests added by mistake; the
   /// server rejects removal if the member already has expenses/settlements.
   Future<GroupModel> removeMember(String groupId, String memberId) async {
     final res = await _client.delete('/groups/$groupId/members/$memberId');
-    return GroupModel.fromJson(res['data'] as Map<String, dynamic>);
+    final json = res['data'] as Map<String, dynamic>;
+    await _store.applyPull({'groups': [json]});
+    return GroupModel.fromJson(json);
   }
 
   /// Leave a group. Returns true if leaving dissolved the group entirely
@@ -124,16 +142,20 @@ class GroupRepository {
   Future<bool> leave(String groupId) async {
     final res = await _client.post('/groups/$groupId/leave');
     final data = res['data'];
+    // Drop the group locally — we're no longer in it.
+    await _store.applyPull({'deletions': [{'entityType': 'group', 'entityId': groupId}]});
+    SyncEngine.instance.kick();
     return data is Map && data['deleted'] == true;
   }
 
   /// Permanently delete a group for everyone. Owner-only on the server.
   Future<void> deleteGroup(String groupId) async {
     await _client.delete('/groups/$groupId');
+    await _store.applyPull({'deletions': [{'entityType': 'group', 'entityId': groupId}]});
+    SyncEngine.instance.kick();
   }
 
   Future<GroupBalances> balances(String groupId) async {
-    final res = await _client.get('/groups/$groupId/balances');
-    return GroupBalances.fromJson(res['data'] as Map<String, dynamic>);
+    return GroupBalances.fromJson(await _store.watchGroupBalancesJson(groupId).first);
   }
 }

@@ -43,11 +43,16 @@ const goalSchema = new Schema(
     notes:        { type: String, trim: true, maxlength: 1000, default: '' },
     contributions: [contributionSchema],
     completedAt:  { type: Date, default: null },
+    clientOpId:   { type: String, default: null },
   },
   { timestamps: true }
 );
 
 // ─── Compound index for listing ───────────────────────────────────────────────
 goalSchema.index({ user: 1, status: 1, createdAt: -1 });
+goalSchema.index(
+  { clientOpId: 1 },
+  { unique: true, partialFilterExpression: { clientOpId: { $type: 'string' } } },
+);
 
 export const Goal = mongoose.model('Goal', goalSchema);

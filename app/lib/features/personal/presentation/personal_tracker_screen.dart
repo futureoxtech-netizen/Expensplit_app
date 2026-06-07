@@ -5,7 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/error_messages.dart';
 import '../../../core/pagination/paged_sliver_list.dart';
+import '../../../core/utils/amount_input_formatter.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../shared/widgets/ad_banner_widget.dart';
 import '../../../shared/widgets/app_sheet.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/error_view.dart';
@@ -375,7 +377,9 @@ class _PersonalTrackerScreenState extends ConsumerState<PersonalTrackerScreen> {
                         total: loadedTotal,
                         currency: currency,
                       ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 12),
+                    const AdBannerWidget(),
+                    const SizedBox(height: 12),
                   ],
                 ),
               ),
@@ -1045,6 +1049,7 @@ class _AddExpenseSheetState extends State<_AddExpenseSheet> {
           TextField(
             controller: _amtCtrl,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: AmountInputFormatter.list(),
             decoration: InputDecoration(
               labelText: 'Amount (${widget.currency})',
               border:

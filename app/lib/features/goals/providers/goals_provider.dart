@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/dio_client.dart';
 import '../../../core/pagination/paged_list_notifier.dart';
+import '../../../core/sync/sync_providers.dart';
 import '../data/goal_model.dart';
 import '../data/goals_repository.dart';
 
@@ -14,6 +15,7 @@ final goalsRepositoryProvider = Provider<GoalsRepository>(
 /// renders `totalSaved` / `totalTarget` / counts from the first response.
 final goalsListProvider = FutureProvider.family<GoalsPage, String?>(
   (ref, status) async {
+    ref.watch(syncRevisionProvider); // reload after each server pull
     final repo = ref.read(goalsRepositoryProvider);
     return repo.list(status: status);
   },
@@ -25,6 +27,7 @@ final goalsListProvider = FutureProvider.family<GoalsPage, String?>(
 final goalsListPagedProvider = StateNotifierProvider.autoDispose.family<
     PagedListNotifier<GoalModel>, PagedListState<GoalModel>, String?>(
   (ref, status) {
+    ref.watch(syncRevisionProvider);
     final repo = ref.watch(goalsRepositoryProvider);
     return PagedListNotifier<GoalModel>(
       fetcher: (page, limit) =>
@@ -37,6 +40,7 @@ final goalsListPagedProvider = StateNotifierProvider.autoDispose.family<
 // ─── Single goal provider ─────────────────────────────────────────────────────
 final goalDetailProvider = FutureProvider.family<GoalModel, String>(
   (ref, id) async {
+    ref.watch(syncRevisionProvider);
     final repo = ref.read(goalsRepositoryProvider);
     return repo.getById(id);
   },

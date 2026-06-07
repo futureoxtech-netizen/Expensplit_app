@@ -15,6 +15,21 @@ class ExpenseShare {
   final double amount;
 }
 
+/// One contributor when an expense is paid by multiple people.
+class ExpensePayer {
+  ExpensePayer({required this.user, required this.amount});
+  factory ExpensePayer.fromJson(Map<String, dynamic> j) {
+    final raw = j['user'];
+    final user = raw is Map<String, dynamic>
+        ? UserModel.fromJson(raw)
+        : UserModel(id: raw.toString(), name: '', email: '');
+    return ExpensePayer(user: user, amount: (j['amount'] as num).toDouble());
+  }
+
+  final UserModel user;
+  final double amount;
+}
+
 class ExpenseModel {
   ExpenseModel({
     required this.id,
@@ -27,6 +42,7 @@ class ExpenseModel {
     required this.paidBy,
     required this.shares,
     required this.spentAt,
+    this.payers = const [],
     this.notes = '',
     this.tax = 0,
     this.tip = 0,
@@ -60,6 +76,9 @@ class ExpenseModel {
       shares: ((j['shares'] ?? []) as List)
           .map((s) => ExpenseShare.fromJson(s as Map<String, dynamic>))
           .toList(),
+      payers: ((j['payers'] ?? []) as List)
+          .map((p) => ExpensePayer.fromJson(p as Map<String, dynamic>))
+          .toList(),
       tax: ((j['tax'] ?? 0) as num).toDouble(),
       tip: ((j['tip'] ?? 0) as num).toDouble(),
       receiptUrl: j['receiptUrl'] as String?,
@@ -81,6 +100,14 @@ class ExpenseModel {
   final String splitMode;
   final UserModel paidBy;
   final List<ExpenseShare> shares;
+
+  /// Populated only when the expense was paid by more than one person.
+  /// Empty for single-payer expenses (use [paidBy] + [amount] then).
+  final List<ExpensePayer> payers;
+
+  /// True when the expense has a multi-payer breakdown.
+  bool get hasMultiplePayers => payers.length > 1;
+
   final double tax;
   final double tip;
   final String? receiptUrl;
@@ -103,6 +130,7 @@ class ExpenseModel {
         splitMode: splitMode,
         paidBy: paidBy,
         shares: shares,
+        payers: payers,
         tax: tax,
         tip: tip,
         receiptUrl: receiptUrl,

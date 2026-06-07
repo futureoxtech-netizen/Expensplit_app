@@ -1,0 +1,251 @@
+import 'package:drift/drift.dart';
+import 'package:drift_flutter/drift_flutter.dart';
+
+part 'app_database.g.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Offline-first local database (source of truth).
+//
+// ID strategy: every row's `id` is a stable local key that never changes.
+//   • Server-origin rows:   id == serverId (the Mongo _id).
+//   • Offline-created rows:  id == a client uuid, serverId == null until synced.
+// Foreign keys always hold the *local* `id`. Because pulled rows use id==serverId,
+// a server reference (an _id) resolves directly to the local row.
+// `dirty` marks rows with un-pushed local changes (pull must not clobber them).
+// ─────────────────────────────────────────────────────────────────────────────
+
+class Users extends Table {
+  TextColumn get id => text()();
+  TextColumn get name => text().withDefault(const Constant(''))();
+  TextColumn get email => text().withDefault(const Constant(''))();
+  TextColumn get avatarUrl => text().nullable()();
+  BoolColumn get isPlaceholder => boolean().withDefault(const Constant(false))();
+  TextColumn get currency => text().nullable()();
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+class Groups extends Table {
+  TextColumn get id => text()();
+  TextColumn get serverId => text().nullable()();
+  TextColumn get name => text().withDefault(const Constant(''))();
+  TextColumn get description => text().withDefault(const Constant(''))();
+  TextColumn get notes => text().withDefault(const Constant(''))();
+  TextColumn get category => text().withDefault(const Constant('other'))();
+  TextColumn get coverColor => text().withDefault(const Constant('#6C5CE7'))();
+  TextColumn get icon => text().withDefault(const Constant('group'))();
+  TextColumn get currency => text().withDefault(const Constant('PKR'))();
+  TextColumn get inviteCode => text().withDefault(const Constant(''))();
+  TextColumn get pendingMembersJson => text().nullable()();
+  DateTimeColumn get createdAt => dateTime().nullable()();
+  DateTimeColumn get updatedAt => dateTime().nullable()();
+  DateTimeColumn get deletedAt => dateTime().nullable()();
+  BoolColumn get dirty => boolean().withDefault(const Constant(false))();
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+class GroupMembers extends Table {
+  TextColumn get groupId => text()();
+  TextColumn get userId => text()();
+  TextColumn get role => text().withDefault(const Constant('member'))();
+  @override
+  Set<Column> get primaryKey => {groupId, userId};
+}
+
+class Expenses extends Table {
+  TextColumn get id => text()();
+  TextColumn get serverId => text().nullable()();
+  TextColumn get groupId => text()();
+  TextColumn get description => text().withDefault(const Constant(''))();
+  TextColumn get notes => text().withDefault(const Constant(''))();
+  RealColumn get amount => real().withDefault(const Constant(0))();
+  TextColumn get currency => text().withDefault(const Constant('PKR'))();
+  TextColumn get category => text().withDefault(const Constant('other'))();
+  TextColumn get splitMode => text().withDefault(const Constant('equal'))();
+  TextColumn get paidById => text().nullable()();
+  RealColumn get tax => real().withDefault(const Constant(0))();
+  RealColumn get tip => real().withDefault(const Constant(0))();
+  TextColumn get receiptUrl => text().nullable()();
+  TextColumn get receiptLocalPath => text().nullable()();
+  DateTimeColumn get spentAt => dateTime().nullable()();
+  DateTimeColumn get createdAt => dateTime().nullable()();
+  DateTimeColumn get updatedAt => dateTime().nullable()();
+  DateTimeColumn get deletedAt => dateTime().nullable()();
+  BoolColumn get dirty => boolean().withDefault(const Constant(false))();
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+class ExpenseShares extends Table {
+  TextColumn get expenseId => text()();
+  TextColumn get userId => text()();
+  RealColumn get amount => real().withDefault(const Constant(0))();
+  @override
+  Set<Column> get primaryKey => {expenseId, userId};
+}
+
+class ExpensePayers extends Table {
+  TextColumn get expenseId => text()();
+  TextColumn get userId => text()();
+  RealColumn get amount => real().withDefault(const Constant(0))();
+  @override
+  Set<Column> get primaryKey => {expenseId, userId};
+}
+
+class Settlements extends Table {
+  TextColumn get id => text()();
+  TextColumn get serverId => text().nullable()();
+  TextColumn get groupId => text()();
+  TextColumn get fromUserId => text()();
+  TextColumn get toUserId => text()();
+  RealColumn get amount => real().withDefault(const Constant(0))();
+  TextColumn get currency => text().withDefault(const Constant('PKR'))();
+  TextColumn get method => text().withDefault(const Constant('cash'))();
+  TextColumn get note => text().withDefault(const Constant(''))();
+  DateTimeColumn get settledAt => dateTime().nullable()();
+  DateTimeColumn get updatedAt => dateTime().nullable()();
+  DateTimeColumn get deletedAt => dateTime().nullable()();
+  BoolColumn get dirty => boolean().withDefault(const Constant(false))();
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+class PersonalExpenses extends Table {
+  TextColumn get id => text()();
+  TextColumn get serverId => text().nullable()();
+  TextColumn get description => text().withDefault(const Constant(''))();
+  RealColumn get amount => real().withDefault(const Constant(0))();
+  TextColumn get currency => text().withDefault(const Constant('PKR'))();
+  TextColumn get category => text().withDefault(const Constant('other'))();
+  DateTimeColumn get date => dateTime().nullable()();
+  TextColumn get note => text().withDefault(const Constant(''))();
+  TextColumn get receiptUrl => text().nullable()();
+  DateTimeColumn get updatedAt => dateTime().nullable()();
+  DateTimeColumn get deletedAt => dateTime().nullable()();
+  BoolColumn get dirty => boolean().withDefault(const Constant(false))();
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+class Goals extends Table {
+  TextColumn get id => text()();
+  TextColumn get serverId => text().nullable()();
+  TextColumn get title => text().withDefault(const Constant(''))();
+  TextColumn get description => text().withDefault(const Constant(''))();
+  TextColumn get emoji => text().withDefault(const Constant('🎯'))();
+  TextColumn get category => text().withDefault(const Constant('other'))();
+  RealColumn get targetAmount => real().withDefault(const Constant(0))();
+  RealColumn get savedAmount => real().withDefault(const Constant(0))();
+  TextColumn get currency => text().withDefault(const Constant('PKR'))();
+  DateTimeColumn get targetDate => dateTime().nullable()();
+  TextColumn get status => text().withDefault(const Constant('active'))();
+  TextColumn get priority => text().withDefault(const Constant('medium'))();
+  TextColumn get color => text().withDefault(const Constant('#6C5CE7'))();
+  TextColumn get notes => text().withDefault(const Constant(''))();
+  TextColumn get contributionsJson => text().nullable()();
+  DateTimeColumn get updatedAt => dateTime().nullable()();
+  DateTimeColumn get deletedAt => dateTime().nullable()();
+  BoolColumn get dirty => boolean().withDefault(const Constant(false))();
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+class Activities extends Table {
+  TextColumn get id => text()();
+  TextColumn get groupId => text().nullable()();
+  TextColumn get type => text().withDefault(const Constant('event'))();
+  TextColumn get message => text().withDefault(const Constant(''))();
+  TextColumn get actorId => text().nullable()();
+  TextColumn get actorName => text().nullable()();
+  TextColumn get actorAvatar => text().nullable()();
+  TextColumn get groupName => text().nullable()();
+  TextColumn get groupColor => text().nullable()();
+  DateTimeColumn get createdAt => dateTime().nullable()();
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Reactions on an expense or settlement. `targetId` is the target's local id.
+class Reactions extends Table {
+  TextColumn get targetType => text()(); // expense | settlement
+  TextColumn get targetId => text()();
+  TextColumn get emoji => text()();
+  TextColumn get userId => text()();
+  TextColumn get userName => text().nullable()();
+  TextColumn get userAvatar => text().nullable()();
+  @override
+  Set<Column> get primaryKey => {targetType, targetId, emoji, userId};
+}
+
+/// Pending offline mutations, replayed FIFO by the SyncEngine.
+class SyncQueue extends Table {
+  TextColumn get opId => text()();
+  TextColumn get entityType => text()(); // group|expense|settlement|personal|goal|profile|reaction|groupNotes
+  TextColumn get entityLocalId => text().nullable()();
+  TextColumn get opType => text()(); // create|update|delete
+  TextColumn get payloadJson => text().withDefault(const Constant('{}'))();
+  IntColumn get attempts => integer().withDefault(const Constant(0))();
+  TextColumn get lastError => text().nullable()();
+  TextColumn get status => text().withDefault(const Constant('pending'))(); // pending|failed
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  @override
+  Set<Column> get primaryKey => {opId};
+}
+
+class SyncMeta extends Table {
+  TextColumn get key => text()();
+  TextColumn get value => text().nullable()();
+  @override
+  Set<Column> get primaryKey => {key};
+}
+
+@DriftDatabase(tables: [
+  Users,
+  Groups,
+  GroupMembers,
+  Expenses,
+  ExpenseShares,
+  ExpensePayers,
+  Settlements,
+  PersonalExpenses,
+  Goals,
+  Activities,
+  Reactions,
+  SyncQueue,
+  SyncMeta,
+])
+class AppDatabase extends _$AppDatabase {
+  AppDatabase() : super(driftDatabase(name: 'expensplit_offline'));
+
+  /// Test/override constructor.
+  AppDatabase.forExecutor(super.e);
+
+  @override
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onCreate: (m) => m.createAll(),
+        onUpgrade: (m, from, to) async {
+          if (from < 2) await m.createTable(reactions);
+        },
+      );
+
+  // Singleton — the app uses one database for its whole lifetime.
+  static final AppDatabase instance = AppDatabase();
+
+  // ── sync_meta helpers ──────────────────────────────────────────────────────
+  Future<String?> metaGet(String key) async {
+    final row = await (select(syncMeta)..where((t) => t.key.equals(key)))
+        .getSingleOrNull();
+    return row?.value;
+  }
+
+  Future<void> metaSet(String key, String value) =>
+      into(syncMeta).insertOnConflictUpdate(SyncMetaCompanion.insert(key: key, value: Value(value)));
+
+  // ── id resolution (local id -> serverId for push) ──────────────────────────
+  Future<String?> groupServerId(String localId) async =>
+      (await (select(groups)..where((t) => t.id.equals(localId))).getSingleOrNull())?.serverId;
+}

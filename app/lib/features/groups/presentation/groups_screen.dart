@@ -223,9 +223,12 @@ class _InvitesSectionState extends ConsumerState<_InvitesSection> {
     final isExpanded = _visibleCount > _kPageSize;
     final cs = Theme.of(context).colorScheme;
 
-    // Height of the scroll area: always fits exactly _kPageSize cards, giving
-    // a natural "peek" that invites the user to scroll for more.
-    final scrollAreaHeight = _kPageSize * _kCardHeight;
+    // Height of the scroll area: fits exactly the number of visible cards, up
+    // to _kPageSize. With one invite it's one card tall (no dead space); with
+    // more than _kPageSize it caps at _kPageSize and the area scrolls. The
+    // extra loader row (when more remain) gets a little headroom.
+    final cardsToFit = visible.length.clamp(1, _kPageSize);
+    final scrollAreaHeight = cardsToFit * _kCardHeight + (remaining > 0 ? 44.0 : 0.0);
 
     return Container(
       decoration: BoxDecoration(

@@ -53,6 +53,22 @@ const expenseSchema = new mongoose.Schema(
       email: { type: String, default: null },
       avatarUrl: { type: String, default: null },
     },
+    // When an expense is paid by more than one person, each contribution is
+    // recorded here (amounts must sum to `amount`). Empty for single-payer
+    // expenses, where `paidBy` + `amount` are authoritative. `paidBy` always
+    // mirrors the largest contributor so legacy reads stay meaningful.
+    payers: {
+      type: [
+        new mongoose.Schema(
+          {
+            user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+            amount: { type: Number, required: true, min: 0 },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+    },
     shares: { type: [shareSchema], required: true },
     tax: { type: Number, default: 0 },
     tip: { type: Number, default: 0 },
@@ -65,10 +81,20 @@ const expenseSchema = new mongoose.Schema(
     },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     deletedAt: { type: Date, default: null, index: true },
+    // Client-generated idempotency key for offline-first sync. A retried
+    // offline-create with the same key returns the existing doc, never a dup.
+    clientOpId: { type: String, default: null },
   },
   { timestamps: true },
 );
 
 expenseSchema.index({ group: 1, spentAt: -1 });
+// Partial (not sparse) unique index: only enforced when clientOpId is a real
+// string, so the many rows with clientOpId:null (normal online creates) don't
+// collide with each other.
+expenseSchema.index(
+  { clientOpId: 1 },
+  { unique: true, partialFilterExpression: { clientOpId: { $type: 'string' } } },
+);
 
 export const Expense = mongoose.model('Expense', expenseSchema);

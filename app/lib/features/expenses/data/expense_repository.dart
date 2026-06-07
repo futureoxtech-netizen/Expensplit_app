@@ -1,10 +1,13 @@
-import '../../../core/network/dio_client.dart';
-import '../../../core/pagination/paged_list_notifier.dart';
+import '../../../core/db/local_store.dart';
+import '../../../core/sync/sync_engine.dart';
 import 'expense_model.dart';
 
+/// Offline-first expense writes. Reads are served by Drift streams in the
+/// providers; here we only handle the mutations — they apply to the local DB
+/// immediately and queue a sync op (the [SyncEngine] owns all server I/O).
 class ExpenseRepository {
-  ExpenseRepository(this._client);
-  final DioClient _client;
+  ExpenseRepository();
+  final _store = LocalStore.instance;
 
   Future<ExpenseModel> create({
     required String groupId,
@@ -13,6 +16,7 @@ class ExpenseRepository {
     required String splitMode,
     required String paidBy,
     required List<Map<String, dynamic>> splits,
+    List<Map<String, dynamic>>? payers,
     String? notes,
     String? category,
     String? currency,
@@ -21,75 +25,24 @@ class ExpenseRepository {
     DateTime? spentAt,
     String? receiptUrl,
   }) async {
-    final res = await _client.post('/expenses', body: {
-      'groupId': groupId,
-      'description': description,
-      'notes': notes ?? '',
-      'amount': amount,
-      'splitMode': splitMode,
-      'paidBy': paidBy,
-      'splits': splits,
-      if (category != null) 'category': category,
-      if (currency != null) 'currency': currency,
-      'tax': tax,
-      'tip': tip,
-      if (spentAt != null) 'spentAt': spentAt.toIso8601String(),
-      if (receiptUrl != null) 'receiptUrl': receiptUrl,
-    });
-    return ExpenseModel.fromJson(res['data'] as Map<String, dynamic>);
-  }
-
-  Future<ExpensePage> listByGroup(String groupId,
-      {int page = 1, int limit = 30}) async {
-    final res = await _client.get(
-      '/expenses/group/$groupId',
-      query: {'page': page, 'limit': limit},
+    final id = await _store.createExpenseLocal(
+      groupId: groupId,
+      description: description,
+      amount: amount,
+      splitMode: splitMode,
+      paidBy: paidBy,
+      splits: splits,
+      payers: payers ?? const [],
+      category: category ?? 'other',
+      notes: notes ?? '',
+      currency: currency ?? 'PKR',
+      tax: tax,
+      tip: tip,
+      spentAt: spentAt,
+      receiptUrl: receiptUrl,
     );
-    return ExpensePage.fromJson(res['data'] as Map<String, dynamic>);
-  }
-
-  /// Bridge from [ExpensePage] to the generic [PagedResult] used by the
-  /// shared list-notifier pattern.
-  Future<PagedResult<ExpenseModel>> listByGroupPaged(
-    String groupId, {
-    int page = 1,
-    int limit = 30,
-  }) async {
-    final p = await listByGroup(groupId, page: page, limit: limit);
-    return PagedResult(items: p.items, hasMore: p.hasMore);
-  }
-
-  /// Merged group activity (expenses + settlement records) for the group
-  /// detail Expenses tab, paginated. Settlements appear inline so a recorded
-  /// payment shows up alongside expenses.
-  Future<PagedResult<GroupTxn>> groupTransactionsPaged(
-    String groupId, {
-    int page = 1,
-    int limit = 30,
-  }) async {
-    final res = await _client.get(
-      '/expenses/group/$groupId/transactions',
-      query: {'page': page, 'limit': limit},
-    );
-    final data = res['data'] as Map<String, dynamic>;
-    final items = ((data['items'] ?? []) as List)
-        .map((j) => parseGroupTxn(j as Map<String, dynamic>))
-        .toList();
-    return PagedResult(
-        items: items, hasMore: (data['hasMore'] as bool?) ?? false);
-  }
-
-  Future<PagedResult<ExpenseModel>> feedPaged({
-    int page = 1,
-    int limit = 30,
-  }) async {
-    final p = await feed(page: page, limit: limit);
-    return PagedResult(items: p.items, hasMore: p.hasMore);
-  }
-
-  Future<ExpenseModel> getById(String id) async {
-    final res = await _client.get('/expenses/$id');
-    return ExpenseModel.fromJson(res['data'] as Map<String, dynamic>);
+    SyncEngine.instance.kick();
+    return ExpenseModel.fromJson((await _store.watchExpenseJson(id).first)!);
   }
 
   Future<ExpenseModel> update(
@@ -99,44 +52,33 @@ class ExpenseRepository {
     String? splitMode,
     String? paidBy,
     List<Map<String, dynamic>>? splits,
+    List<Map<String, dynamic>>? payers,
     String? category,
     String? notes,
     String? currency,
     DateTime? spentAt,
     String? receiptUrl,
   }) async {
-    final body = <String, dynamic>{
-      if (description != null) 'description': description,
-      if (amount != null) 'amount': amount,
-      if (splitMode != null) 'splitMode': splitMode,
-      if (paidBy != null) 'paidBy': paidBy,
-      if (splits != null) 'splits': splits,
-      if (category != null) 'category': category,
-      if (notes != null) 'notes': notes,
-      if (currency != null) 'currency': currency,
-      if (spentAt != null) 'spentAt': spentAt.toIso8601String(),
-      if (receiptUrl != null) 'receiptUrl': receiptUrl,
-    };
-    final res = await _client.patch('/expenses/$id', body: body);
-    return ExpenseModel.fromJson(res['data'] as Map<String, dynamic>);
+    await _store.updateExpenseLocal(
+      id,
+      description: description ?? '',
+      amount: amount ?? 0,
+      splitMode: splitMode ?? 'equal',
+      paidBy: paidBy ?? '',
+      splits: splits ?? const [],
+      payers: payers ?? const [],
+      category: category ?? 'other',
+      notes: notes ?? '',
+      tax: 0,
+      tip: 0,
+      receiptUrl: receiptUrl,
+    );
+    SyncEngine.instance.kick();
+    return ExpenseModel.fromJson((await _store.watchExpenseJson(id).first)!);
   }
 
   Future<void> delete(String id) async {
-    await _client.delete('/expenses/$id');
-  }
-
-  Future<ExpensePage> feed({int page = 1, int limit = 30}) async {
-    final res = await _client
-        .get('/expenses/feed', query: {'page': page, 'limit': limit});
-    return ExpensePage.fromJson(res['data'] as Map<String, dynamic>);
-  }
-
-  Future<List<MonthlyCategoryTotal>> analytics({int months = 6}) async {
-    final res =
-        await _client.get('/expenses/analytics', query: {'months': months});
-    final data = res['data'] as List;
-    return data
-        .map((e) => MonthlyCategoryTotal.fromJson(e as Map<String, dynamic>))
-        .toList();
+    await _store.deleteExpenseLocal(id);
+    SyncEngine.instance.kick();
   }
 }

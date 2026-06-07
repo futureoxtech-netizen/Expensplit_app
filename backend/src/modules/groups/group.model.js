@@ -28,6 +28,8 @@ const groupSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
     description: { type: String, default: '' },
+    // Free-form shared notes any member can edit (Splitwise-style group notes).
+    notes: { type: String, default: '', maxlength: 2000 },
     category: {
       type: String,
       enum: ['family', 'trip', 'roommates', 'office', 'event', 'other'],
@@ -45,12 +47,17 @@ const groupSchema = new mongoose.Schema(
     pendingMembers: { type: [pendingMemberSchema], default: [] },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     archived: { type: Boolean, default: false },
+    clientOpId: { type: String, default: null },
   },
   { timestamps: true },
 );
 
 groupSchema.index({ 'members.user': 1 });
 groupSchema.index({ 'pendingMembers.user': 1 });
+groupSchema.index(
+  { clientOpId: 1 },
+  { unique: true, partialFilterExpression: { clientOpId: { $type: 'string' } } },
+);
 
 groupSchema.method('isMember', function isMember(userId) {
   return this.members.some((m) => m.user.toString() === userId.toString());

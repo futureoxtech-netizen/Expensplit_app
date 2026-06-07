@@ -2,10 +2,16 @@ import { asyncHandler } from '../../utils/asyncHandler.js';
 import { AppError } from '../../utils/errors.js';
 import { deleteFromS3 } from '../../middleware/upload.js';
 import { PersonalExpense } from './personal.model.js';
+import { recordTombstone } from '../sync/tombstone.model.js';
 
 // POST /personal-expenses
 export const create = asyncHandler(async (req, res) => {
-  const { description, amount, currency, category, date, note, receiptUrl } = req.body;
+  const { description, amount, currency, category, date, note, receiptUrl, clientOpId } = req.body;
+  // Idempotent replay for offline-first sync.
+  if (clientOpId) {
+    const dup = await PersonalExpense.findOne({ user: req.user.id, clientOpId });
+    if (dup) return res.status(200).json({ ok: true, data: dup });
+  }
   const expense = await PersonalExpense.create({
     user: req.user.id,
     description,
@@ -15,6 +21,7 @@ export const create = asyncHandler(async (req, res) => {
     date: date ? new Date(date) : new Date(),
     note: note || '',
     receiptUrl: receiptUrl || '',
+    clientOpId: clientOpId || null,
   });
   res.status(201).json({ ok: true, data: expense });
 });
@@ -109,5 +116,10 @@ export const remove = asyncHandler(async (req, res) => {
   if (!expense) throw new AppError('Not found', 404);
   // Clean up the attached receipt, if any.
   if (expense.receiptUrl) deleteFromS3(expense.receiptUrl).catch(() => {});
+  recordTombstone({
+    entityType: 'personalExpense',
+    entityId: expense._id,
+    users: [req.user.id],
+  }).catch(() => {});
   res.json({ ok: true });
 });

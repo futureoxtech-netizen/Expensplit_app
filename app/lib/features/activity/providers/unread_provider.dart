@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive/hive.dart';
 
 import '../../../core/storage/hive_setup.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../data/activity_repository.dart';
 import 'activity_providers.dart';
 
@@ -32,17 +33,25 @@ class UnreadActivityNotifier extends StateNotifier<int> {
         _ref.read(activityFeedProvider.notifier).loadFirst();
       }
     });
-    // Initial compute when feed already has data.
-    final items = _ref.read(activityFeedProvider).items;
-    if (items != null) _recompute(items);
+    // Initial compute when feed already has data; otherwise kick off a load
+    // so the badge is accurate on app open without first opening Activity.
+    final state = _ref.read(activityFeedProvider);
+    if (state.items != null) {
+      _recompute(state.items!);
+    } else if (!state.isLoadingFirst) {
+      _ref.read(activityFeedProvider.notifier).loadFirst();
+    }
   }
 
   final Ref _ref;
 
   void _recompute(List<ActivityItem> items) {
     final lastSeen = _readLastSeen();
+    final myId = _ref.read(authProvider).user?.id;
     var count = 0;
     for (final a in items) {
+      // Don't count the user's own actions as unread notifications.
+      if (a.actorId != null && a.actorId == myId) continue;
       if (a.createdAt.isAfter(lastSeen)) count += 1;
     }
     state = count;

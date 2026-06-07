@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/error_messages.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../shared/widgets/ad_banner_widget.dart';
 import '../../../shared/widgets/avatar.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/shimmer_loader.dart';
@@ -95,6 +96,8 @@ class _FriendsSummaryScreenState extends ConsumerState<FriendsSummaryScreen> {
                               setState(() => _showSettled = true),
                         ),
                       ],
+                      const SizedBox(height: 20),
+                      const AdBannerWidget(),
                     ]),
                   ),
                 );
@@ -120,7 +123,7 @@ class _OverallBanner extends StatelessWidget {
     final isOwed = net > 0;
     final color = isSettled
         ? Colors.grey
-        : (isOwed ? AppColors.primary : Colors.orange);
+        : (isOwed ? AppColors.accent : AppColors.danger);
     final label = isSettled
         ? 'You are all settled up'
         : isOwed
@@ -151,7 +154,7 @@ class _FriendRow extends StatelessWidget {
 
     final amtColor = settled
         ? Colors.grey
-        : (owedToMe ? AppColors.primary : Colors.orange);
+        : (owedToMe ? AppColors.accent : AppColors.danger);
     final amtLabel =
         settled ? 'settled up' : (owedToMe ? 'owes you' : 'you owe');
     final amtValue =

@@ -7,6 +7,12 @@ const splitEntry = z.object({
   value: z.number().nonnegative().optional(),
 });
 
+// One contributor when an expense is paid by multiple people.
+const payerEntry = z.object({
+  userId: objectId,
+  amount: z.number().nonnegative(),
+});
+
 export const createExpenseSchema = z.object({
   groupId: objectId,
   description: z.string().min(1).max(120),
@@ -29,7 +35,11 @@ export const createExpenseSchema = z.object({
     ])
     .optional(),
   splitMode: z.enum(['equal', 'exact', 'percent', 'shares']),
+  clientOpId: z.string().max(64).optional(),
   paidBy: objectId,
+  // Optional multi-payer breakdown. When present (2+ entries) it overrides the
+  // single `paidBy` and the amounts must sum to the expense total.
+  payers: z.array(payerEntry).optional(),
   splits: z.array(splitEntry).min(1),
   tax: z.number().nonnegative().optional().default(0),
   tip: z.number().nonnegative().optional().default(0),

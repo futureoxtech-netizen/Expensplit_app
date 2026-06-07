@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,6 +7,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/error_messages.dart';
+import '../../../core/services/ad_service.dart';
+import '../../../core/utils/amount_input_formatter.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../shared/widgets/app_text_field.dart';
 import '../../../shared/widgets/avatar.dart';
@@ -36,8 +40,10 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
   String _category = 'food';
   String _splitMode = 'equal';
   String? _paidBy;
+  bool _multiPayer = false;
   final Set<String> _participants = {};
   final Map<String, TextEditingController> _valueCtrls = {};
+  final Map<String, TextEditingController> _payerCtrls = {};
   bool _loading = false;
   bool _prePopulated = false;
   late final ReceiptController _receipt;
@@ -58,6 +64,12 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
         _participants.add(s.user.id);
         _ctrlFor(s.user.id).text = s.amount.toStringAsFixed(2);
       }
+      if (e.payers.length > 1) {
+        _multiPayer = true;
+        for (final p in e.payers) {
+          _payerCtrlFor(p.user.id).text = p.amount.toStringAsFixed(2);
+        }
+      }
       _prePopulated = true;
     }
   }
@@ -71,11 +83,28 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     for (final c in _valueCtrls.values) {
       c.dispose();
     }
+    for (final c in _payerCtrls.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
   TextEditingController _ctrlFor(String userId) =>
       _valueCtrls.putIfAbsent(userId, () => TextEditingController());
+
+  TextEditingController _payerCtrlFor(String userId) =>
+      _payerCtrls.putIfAbsent(userId, () => TextEditingController());
+
+  /// Multi-payer breakdown for the request body, or null for a single payer.
+  List<Map<String, dynamic>>? _buildPayers() {
+    if (!_multiPayer) return null;
+    final list = <Map<String, dynamic>>[];
+    _payerCtrls.forEach((id, ctrl) {
+      final v = double.tryParse(ctrl.text.trim()) ?? 0;
+      if (v > 0) list.add({'userId': id, 'amount': v});
+    });
+    return list;
+  }
 
   List<Map<String, dynamic>> _buildSplits() {
     return _participants.map((id) {
@@ -103,6 +132,32 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
       return;
     }
 
+    // Validate the split locally so the user gets an instant, clear message
+    // instead of a failed server round-trip.
+    final splitError = _validateSplit(amount);
+    if (splitError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(splitError)),
+      );
+      return;
+    }
+
+    final payers = _buildPayers();
+    if (_multiPayer) {
+      final payerError = _validatePayers(amount);
+      if (payerError != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(payerError)),
+        );
+        return;
+      }
+    }
+    // `paidBy` must be a member id; for a multi-payer expense the server
+    // overrides it, but we still send the first contributor to satisfy the API.
+    final paidBy = (_multiPayer && payers != null && payers.isNotEmpty)
+        ? payers.first['userId'] as String
+        : _paidBy!;
+
     setState(() => _loading = true);
 
     // Upload the receipt (if a new one was picked) BEFORE creating the
@@ -126,7 +181,8 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
               description: desc,
               amount: amount,
               splitMode: _splitMode,
-              paidBy: _paidBy!,
+              paidBy: paidBy,
+              payers: payers ?? const [],
               splits: _buildSplits(),
               category: _category,
               notes: _notes.text.trim(),
@@ -144,7 +200,8 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
               description: desc,
               amount: amount,
               splitMode: _splitMode,
-              paidBy: _paidBy!,
+              paidBy: paidBy,
+              payers: payers,
               splits: _buildSplits(),
               category: _category,
               notes: _notes.text.trim(),
@@ -168,6 +225,8 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
           duration: const Duration(seconds: 2),
         ));
         context.pop();
+        // Show an interstitial every 3rd expense add (non-intrusive frequency).
+        if (!widget.isEdit) unawaited(AdService.instance.onExpenseSaved());
       }
     } catch (e) {
       // The expense save failed but we may have just uploaded a receipt —
@@ -178,6 +237,94 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// Validates that the multi-payer amounts add up to the total. Returns an
+  /// error message, or null if valid.
+  String? _validatePayers(double total) {
+    final sum = _payerCtrls.values
+        .fold<double>(0, (a, c) => a + (double.tryParse(c.text.trim()) ?? 0));
+    if (sum <= 0) return 'Enter how much each person paid';
+    if ((sum - total).abs() > 0.01) {
+      return 'Payer amounts must add up to the total '
+          '(${sum.toStringAsFixed(2)} of ${total.toStringAsFixed(2)})';
+    }
+    return null;
+  }
+
+  List<Widget> _buildPayerRows(List<UserModel> members, String currency) {
+    return [
+      for (final u in members)
+        Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardTheme.color,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Theme.of(context).dividerColor),
+          ),
+          child: Row(
+            children: [
+              Avatar(name: u.name, imageUrl: u.avatarUrl, size: 32),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(u.name.isEmpty ? u.email : u.name,
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+              ),
+              SizedBox(
+                width: 110,
+                child: TextField(
+                  controller: _payerCtrlFor(u.id),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [
+                    AmountInputFormatter()
+                  ],
+                  textAlign: TextAlign.right,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    prefixText: Money.symbolOf(currency),
+                    hintText: '0.00',
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+            ],
+          ),
+        ),
+    ];
+  }
+
+  Widget _payerSummary(double total, String currency) {
+    final sum = _payerCtrls.values
+        .fold<double>(0, (a, c) => a + (double.tryParse(c.text.trim()) ?? 0));
+    final diff = (sum - total).abs();
+    final ok = total > 0 && diff < 0.01;
+    final color = ok ? AppColors.accent : AppColors.danger;
+    final label = ok
+        ? 'Paid ${Money.format(sum, code: currency)} of '
+            '${Money.format(total, code: currency)} ✓'
+        : 'Paid ${Money.format(sum, code: currency)} of '
+            '${Money.format(total, code: currency)}';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.account_balance_wallet_rounded, color: color, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(label,
+                style: TextStyle(color: color, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -216,6 +363,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                   prefixText: Money.symbolOf(group.currency),
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: AmountInputFormatter.list(),
                   onChanged: (_) => setState(() {}),
                 ),
                 const SizedBox(height: 14),
@@ -252,60 +400,111 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                   ),
                 ),
                 const SizedBox(height: 18),
-                const Text('Paid by',
-                    style: TextStyle(fontWeight: FontWeight.w600)),
-                const SizedBox(height: 8),
-                SizedBox(
-                  height: 80,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: members.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 10),
-                    itemBuilder: (_, i) {
-                      final u = members[i];
-                      final selected = _paidBy == u.id;
-                      return GestureDetector(
-                        onTap: () => setState(() => _paidBy = u.id),
-                        child: Column(
-                          children: [
-                            Container(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: selected
-                                      ? AppColors.primary
-                                      : Colors.transparent,
-                                  width: 3,
-                                ),
-                              ),
-                              padding: const EdgeInsets.all(2),
-                              child: Avatar(
-                                  name: u.name,
-                                  imageUrl: u.avatarUrl,
-                                  size: 44),
-                            ),
-                            const SizedBox(height: 4),
-                            SizedBox(
-                              width: 60,
-                              child: Text(
-                                u.name.split(' ').first,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: selected
-                                      ? FontWeight.w700
-                                      : FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          ],
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text('Paid by',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
+                    ),
+                    // Toggle between a single payer and a multi-payer breakdown.
+                    Wrap(
+                      spacing: 6,
+                      children: [
+                        ChoiceChip(
+                          label: const Text('One person'),
+                          selected: !_multiPayer,
+                          onSelected: (_) => setState(() => _multiPayer = false),
                         ),
-                      );
-                    },
-                  ),
+                        ChoiceChip(
+                          label: const Text('Multiple'),
+                          selected: _multiPayer,
+                          onSelected: (_) => setState(() {
+                            _multiPayer = true;
+                            // Seed the current payer with the full amount for
+                            // convenience when first switching.
+                            final allEmpty = _payerCtrls.values
+                                .every((c) => c.text.trim().isEmpty);
+                            if (allEmpty && _paidBy != null && amount > 0) {
+                              _payerCtrlFor(_paidBy!).text =
+                                  amount.toStringAsFixed(2);
+                            }
+                          }),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 10),
+                if (!_multiPayer)
+                  SizedBox(
+                    height: 80,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: members.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 10),
+                      itemBuilder: (_, i) {
+                        final u = members[i];
+                        final selected = _paidBy == u.id;
+                        return GestureDetector(
+                          onTap: () => setState(() => _paidBy = u.id),
+                          child: Column(
+                            children: [
+                              Container(
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: selected
+                                        ? AppColors.primary
+                                        : Colors.transparent,
+                                    width: 3,
+                                  ),
+                                ),
+                                padding: const EdgeInsets.all(2),
+                                child: Avatar(
+                                    name: u.name,
+                                    imageUrl: u.avatarUrl,
+                                    size: 44),
+                              ),
+                              const SizedBox(height: 4),
+                              SizedBox(
+                                width: 60,
+                                child: Text(
+                                  u.name.split(' ').first,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: selected
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  )
+                else ...[
+                  Text(
+                    'Enter how much each person paid. Must add up to the total.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withOpacity(0.6),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ..._buildPayerRows(members, group.currency),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: _payerSummary(amount, group.currency),
+                  ),
+                ],
                 const SizedBox(height: 18),
                 const Text('Split mode',
                     style: TextStyle(fontWeight: FontWeight.w600)),
@@ -369,6 +568,35 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     );
   }
 
+  /// Mirrors the server-side split rules so the user can't submit a split
+  /// that would be rejected. Returns an error message, or null if valid.
+  String? _validateSplit(double total) {
+    if (_splitMode == 'equal') return null;
+    final values = _participants
+        .map((id) => double.tryParse(_valueCtrls[id]?.text.trim() ?? '') ?? 0)
+        .toList();
+    final sum = values.fold<double>(0, (a, b) => a + b);
+    switch (_splitMode) {
+      case 'exact':
+        if ((sum - total).abs() > 0.01) {
+          return 'Exact amounts must add up to the total '
+              '(${sum.toStringAsFixed(2)} of ${total.toStringAsFixed(2)})';
+        }
+        return null;
+      case 'percent':
+        if ((sum - 100).abs() > 0.01) {
+          return 'Percentages must add up to 100% '
+              '(currently ${sum.toStringAsFixed(1)}%)';
+        }
+        return null;
+      case 'shares':
+        if (sum <= 0) return 'Enter at least one share weight';
+        return null;
+      default:
+        return null;
+    }
+  }
+
   String _splitModeHelp() {
     switch (_splitMode) {
       case 'equal':
@@ -429,7 +657,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
                     inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))
+                      AmountInputFormatter()
                     ],
                     textAlign: TextAlign.right,
                     decoration: InputDecoration(

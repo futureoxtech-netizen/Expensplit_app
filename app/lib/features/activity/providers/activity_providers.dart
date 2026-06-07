@@ -1,11 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/network/dio_client.dart';
 import '../../../core/pagination/paged_list_notifier.dart';
+import '../../../core/sync/sync_providers.dart';
 import '../data/activity_repository.dart';
 
 final activityRepositoryProvider = Provider<ActivityRepository>(
-  (ref) => ActivityRepository(DioClient.instance),
+  (ref) => ActivityRepository(),
 );
 
 /// Global activity feed. Uses [PagedListNotifier] for infinite scroll —
@@ -14,6 +14,7 @@ final activityRepositoryProvider = Provider<ActivityRepository>(
 /// scroll listener.
 final activityFeedProvider = StateNotifierProvider.autoDispose<
     PagedListNotifier<ActivityItem>, PagedListState<ActivityItem>>((ref) {
+  ref.watch(syncRevisionProvider);
   final repo = ref.watch(activityRepositoryProvider);
   return PagedListNotifier<ActivityItem>(
     fetcher: (page, limit) => repo.feed(page: page, limit: limit),

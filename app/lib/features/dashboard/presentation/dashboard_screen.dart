@@ -9,6 +9,7 @@ import '../../../shared/widgets/avatar.dart';
 import '../../../shared/widgets/category_icon.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/glass_card.dart';
+import '../../../shared/widgets/ad_banner_widget.dart';
 import '../../../shared/widgets/gradient_scaffold.dart';
 import '../../../shared/widgets/shimmer_loader.dart';
 import '../../../core/errors/error_messages.dart';
@@ -157,6 +158,10 @@ class DashboardScreen extends ConsumerWidget {
               loading: () => const SizedBox(height: 140, child: ShimmerLoader(height: 140, count: 1)),
               error: (e, _) => _ErrorCard(message: friendlyError(e)),
             ),
+            const SizedBox(height: 20),
+            // ── Banner ad — between Groups and Recent Expenses ────────────
+            // Adaptive banner that collapses to nothing if no ad is loaded.
+            const AdBannerWidget(),
             const SizedBox(height: 20),
             Row(
               children: [

@@ -1,10 +1,17 @@
 import { Goal } from './goal.model.js';
 import { NotFound, Forbidden, BadRequest } from '../../utils/errors.js';
+import { recordTombstone } from '../sync/tombstone.model.js';
 
 // ─── Create ───────────────────────────────────────────────────────────────────
 export async function createGoal(userId, body) {
   const { title, description, emoji, category, targetAmount,
-          currency, targetDate, priority, color, notes } = body;
+          currency, targetDate, priority, color, notes, clientOpId } = body;
+
+  // Idempotent replay for offline-first sync.
+  if (clientOpId) {
+    const dup = await Goal.findOne({ user: userId, clientOpId });
+    if (dup) return dup;
+  }
 
   const goal = await Goal.create({
     user: userId,
@@ -18,6 +25,7 @@ export async function createGoal(userId, body) {
     priority: priority || 'medium',
     color: color || '#6C5CE7',
     notes: notes || '',
+    clientOpId: clientOpId || null,
   });
 
   return goal;
@@ -87,6 +95,11 @@ export async function updateGoal(userId, goalId, body) {
 export async function deleteGoal(userId, goalId) {
   const goal = await getGoalById(userId, goalId);
   await goal.deleteOne();
+  recordTombstone({
+    entityType: 'goal',
+    entityId: goalId,
+    users: [userId],
+  }).catch(() => {});
   return { ok: true };
 }
 

@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/error_messages.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../shared/widgets/ad_banner_widget.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/shimmer_loader.dart';
@@ -124,7 +125,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               _sourceChips(),
               const SizedBox(height: 10),
               _periodChips(),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
+              // ── Banner ad — sits between filters and report content ──────
+              const AdBannerWidget(),
+              const SizedBox(height: 12),
               async.when(
                 loading: () => const Padding(
                   padding: EdgeInsets.only(top: 12),

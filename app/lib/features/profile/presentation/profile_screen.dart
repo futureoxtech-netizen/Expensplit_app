@@ -216,21 +216,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 : () => _pickInvitePolicy(user.groupInvitePolicy),
           ),
           const SizedBox(height: 20),
-          const _SectionTitle('Notifications'),
-          _Tile(
-            icon: Icons.notifications_active_rounded,
-            title: 'Push notifications',
-            subtitle: 'Receive alerts for new expenses, settlements and group activity.',
-            trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: () => _openSystemNotificationSettings(),
-          ),
-          const SizedBox(height: 20),
           const _SectionTitle('About'),
-          const _Tile(
-            icon: Icons.info_outline_rounded,
-            title: 'Version',
-            subtitle: 'Expensplit 0.1.0',
-          ),
           _Tile(
             icon: Icons.privacy_tip_outlined,
             title: 'Privacy Policy',
@@ -269,18 +255,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           const SizedBox(height: 12),
           _DeleteAccountButton(),
         ],
-      ),
-    );
-  }
-
-  void _openSystemNotificationSettings() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          "You'll get a banner whenever someone in your group adds an expense or settles up. "
-          "To turn alerts off, open your phone's notification settings for Expensplit.",
-        ),
-        duration: Duration(seconds: 4),
       ),
     );
   }
@@ -585,6 +559,8 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return AlertDialog(
+      scrollable: true,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       title: Row(
         children: [

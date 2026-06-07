@@ -11,6 +11,7 @@ import { DeletedAccount } from '../auth/deleted_account.model.js';
 import { PersonalExpense } from '../personal/personal.model.js';
 import { NotFound, BadRequest } from '../../utils/errors.js';
 import { uploadToS3, deleteManyFromS3 } from '../../middleware/upload.js';
+import { effectivePayers, pairwiseNetForExpense } from '../../utils/expensePayers.js';
 
 const updateSchema = z.object({
   name: z.string().min(2).max(80).optional(),
@@ -167,21 +168,25 @@ export const userController = {
       const pairwise = new Map();
 
       for (const exp of expenses) {
-        if (!exp.paidBy) continue; // payer deleted their account — skip
-        const payer = exp.paidBy.toString();
-        if (payer === userId) {
-          // I paid — each sharer owes me their share
-          for (const share of exp.shares) {
-            if (!share.user) continue; // sharer deleted their account
-            const debtor = share.user.toString();
-            if (debtor === userId) continue;
-            pairwise.set(debtor, (pairwise.get(debtor) ?? 0) + share.amount);
-          }
-        } else {
-          // Someone else paid — I owe them my share
-          const myShare = exp.shares.find((s) => s.user && s.user.toString() === userId);
-          if (myShare) {
-            pairwise.set(payer, (pairwise.get(payer) ?? 0) - myShare.amount);
+        const payers = effectivePayers(exp);
+        const totalPaid = payers.reduce((a, p) => a + p.amount, 0);
+        if (totalPaid <= 0) continue; // all payers deleted their accounts — skip
+        // Allocate each sharer's debt across the payers in proportion to how
+        // much each paid (handles single- and multi-payer expenses alike).
+        for (const share of exp.shares) {
+          if (!share.user) continue;
+          const debtor = share.user.toString();
+          for (const p of payers) {
+            const payer = p.user.toString();
+            if (payer === debtor) continue; // never owe yourself
+            const portion = share.amount * (p.amount / totalPaid);
+            if (payer === userId) {
+              // I paid this slice — the sharer owes me.
+              pairwise.set(debtor, (pairwise.get(debtor) ?? 0) + portion);
+            } else if (debtor === userId) {
+              // Someone else paid this slice of my share — I owe them.
+              pairwise.set(payer, (pairwise.get(payer) ?? 0) - portion);
+            }
           }
         }
       }
@@ -255,6 +260,8 @@ export const userController = {
       $or: [
         { paidBy: userId, 'shares.user': friendId },
         { paidBy: friendId, 'shares.user': userId },
+        { 'payers.user': userId, 'shares.user': friendId },
+        { 'payers.user': friendId, 'shares.user': userId },
       ],
     })
       .sort({ spentAt: -1 })
@@ -273,17 +280,9 @@ export const userController = {
       .lean();
 
     const expenseItems = expenses.map((exp) => {
-      // paidBy may be null if the paying user deleted their account
-      const payerObj = exp.paidBy;
-      const payer = payerObj ? (payerObj._id ?? payerObj).toString() : null;
-      let net = 0;
-      if (payer === userId) {
-        const share = exp.shares.find((s) => s.user && s.user.toString() === friendId);
-        net = share?.amount ?? 0; // friend owes me
-      } else {
-        const share = exp.shares.find((s) => s.user && s.user.toString() === userId);
-        net = -(share?.amount ?? 0); // I owe friend
-      }
+      // Positive → friend owes me; negative → I owe friend. Handles
+      // single- and multi-payer expenses via proportional allocation.
+      const net = pairwiseNetForExpense(exp, userId, friendId);
       const grp = groupMap.get(exp.group.toString());
       return {
         type: 'expense',
@@ -298,7 +297,7 @@ export const userController = {
         net: Math.round(net * 100) / 100,
         date: exp.spentAt,
       };
-    });
+    }).filter((item) => Math.abs(item.net) > 0.001);
 
     const settlementItems = settlements.map((s) => {
       const from = s.from.toString();

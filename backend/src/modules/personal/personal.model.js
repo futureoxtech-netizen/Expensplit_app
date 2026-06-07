@@ -14,10 +14,15 @@ const personalExpenseSchema = new mongoose.Schema(
     date: { type: Date, required: true, index: true },
     note: { type: String, default: '' },
     receiptUrl: { type: String, default: '' },
+    clientOpId: { type: String, default: null },
   },
   { timestamps: true },
 );
 
 personalExpenseSchema.index({ user: 1, date: -1 });
+personalExpenseSchema.index(
+  { clientOpId: 1 },
+  { unique: true, partialFilterExpression: { clientOpId: { $type: 'string' } } },
+);
 
 export const PersonalExpense = mongoose.model('PersonalExpense', personalExpenseSchema);

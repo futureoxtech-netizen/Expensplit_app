@@ -2,6 +2,7 @@ import http from 'http';
 import { app } from './src/app.js';
 import { env } from './src/config/env.js';
 import { connectMongo } from './src/config/db.js';
+import { syncOfflineIndexes } from './src/config/syncIndexes.js';
 import { initSocket } from './src/socket/index.js';
 import { logger } from './src/config/logger.js';
 
@@ -9,6 +10,7 @@ const server = http.createServer(app);
 
 async function bootstrap() {
   await connectMongo();
+  await syncOfflineIndexes();
   initSocket(server);
 
   server.listen(env.PORT, () => {
