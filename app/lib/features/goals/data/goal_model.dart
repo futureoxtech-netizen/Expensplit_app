@@ -15,7 +15,7 @@ class ContributionModel {
       ContributionModel(
         id: j['_id'] as String,
         amount: (j['amount'] as num).toDouble(),
-        date: DateTime.parse(j['date'] as String),
+        date: DateTime.parse(j['date'] as String).toLocal(),
         note: j['note'] as String? ?? '',
       );
 

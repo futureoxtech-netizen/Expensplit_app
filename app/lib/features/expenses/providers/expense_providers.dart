@@ -39,9 +39,8 @@ final expenseFeedProvider = StreamProvider.autoDispose<ExpensePage>((ref) {
 final groupExpensesPagedProvider = StateNotifierProvider.autoDispose
     .family<PagedListNotifier<GroupTxn>, PagedListState<GroupTxn>, String>(
         (ref, groupId) {
-  ref.watch(syncRevisionProvider);
   SyncEngine.instance.kick();
-  return PagedListNotifier<GroupTxn>(
+  final notifier = PagedListNotifier<GroupTxn>(
     fetcher: (page, limit) async {
       final list = await LocalStore.instance
           .groupTransactionsPage(groupId, limit: limit, offset: (page - 1) * limit);
@@ -49,13 +48,16 @@ final groupExpensesPagedProvider = StateNotifierProvider.autoDispose
     },
     limit: 30,
   );
+  // Refresh in place after each server pull instead of recreating the notifier
+  // (which would blank the list and reset scroll on every sync).
+  ref.listen(syncRevisionProvider, (_, __) => notifier.softRefresh());
+  return notifier;
 });
 
 final expenseFeedPagedProvider = StateNotifierProvider.autoDispose<
     PagedListNotifier<ExpenseModel>, PagedListState<ExpenseModel>>((ref) {
-  ref.watch(syncRevisionProvider);
   SyncEngine.instance.kick();
-  return PagedListNotifier<ExpenseModel>(
+  final notifier = PagedListNotifier<ExpenseModel>(
     fetcher: (page, limit) async {
       final list = await LocalStore.instance.feedPage(limit: limit, offset: (page - 1) * limit);
       return PagedResult(
@@ -63,6 +65,8 @@ final expenseFeedPagedProvider = StateNotifierProvider.autoDispose<
     },
     limit: 30,
   );
+  ref.listen(syncRevisionProvider, (_, __) => notifier.softRefresh());
+  return notifier;
 });
 
 final monthlyAnalyticsProvider =

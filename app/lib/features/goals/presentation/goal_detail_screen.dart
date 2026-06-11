@@ -25,6 +25,11 @@ class GoalDetailScreen extends ConsumerWidget {
     final async = ref.watch(goalDetailProvider(goalId));
 
     return async.when(
+      // Keep the loaded screen on screen while a background sync reloads the
+      // provider — otherwise every sync pull flashes the shimmer and disposes
+      // the body (which then crashes any in-flight setState from the sheet).
+      skipLoadingOnReload: true,
+      skipLoadingOnRefresh: true,
       loading: () => const Scaffold(body: Padding(padding: EdgeInsets.all(16), child: ShimmerLoader())),
       error: (e, _) => Scaffold(
         body: SafeArea(
@@ -56,6 +61,14 @@ class _GoalDetailBodyState extends ConsumerState<_GoalDetailBody> {
   void initState() {
     super.initState();
     _goal = widget.goal;
+  }
+
+  @override
+  void didUpdateWidget(_GoalDetailBody oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Reflect fresh data delivered by a provider reload (e.g. a sync pull or a
+    // contribution made on another device).
+    if (widget.goal != oldWidget.goal) _goal = widget.goal;
   }
 
   Color get _goalColor {
@@ -234,7 +247,9 @@ class _GoalDetailBodyState extends ConsumerState<_GoalDetailBody> {
       context: context,
       builder: (_) => AddContributionSheet(
         goal: _goal,
-        onAdded: (updated) => setState(() => _goal = updated),
+        onAdded: (updated) {
+          if (mounted) setState(() => _goal = updated);
+        },
       ),
     );
   }
@@ -246,7 +261,7 @@ class _GoalDetailBodyState extends ConsumerState<_GoalDetailBody> {
         existing: _goal,
         onCreated: () async {
           final updated = await ref.read(goalsRepositoryProvider).getById(_goal.id);
-          setState(() => _goal = updated);
+          if (mounted) setState(() => _goal = updated);
         },
       ),
     );

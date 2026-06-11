@@ -27,10 +27,14 @@ class RealtimeBridge {
 
   Future<void> _joinAllUserGroups() async {
     try {
-      final groups = await _ref.read(groupRepositoryProvider).list();
-      for (final g in groups) {
-        if (_joinedGroups.add(g.id)) {
-          SocketService.instance.joinGroup(g.id);
+      // Socket rooms are keyed by the *server* id (`group:<serverId>`). The
+      // group's local id is a uuid for anything created on this device, so we
+      // must join by server id or we'd sit in a room nobody broadcasts to and
+      // never receive `expense:*` / `settlement:*` events (no live updates).
+      final ids = await LocalStore.instance.allGroupServerIds();
+      for (final id in ids) {
+        if (_joinedGroups.add(id)) {
+          SocketService.instance.joinGroup(id);
         }
       }
     } catch (e) {
@@ -47,8 +51,15 @@ class RealtimeBridge {
     }
   }
 
+  /// After every sync pull, re-check the group set. A group created offline
+  /// only gets a server id once its create has been pushed; this picks it up
+  /// and joins its room so realtime starts flowing without waiting for the
+  /// next reconnect.
+  void _onSyncRevision() => _joinAllUserGroups();
+
   void _wire() {
     _wired = true;
+    SyncEngine.instance.revision.addListener(_onSyncRevision);
     final s = SocketService.instance;
 
     // Re-join all known groups whenever the socket reconnects.
@@ -221,12 +232,19 @@ class RealtimeBridge {
     return null;
   }
 
-  void joinGroup(String id) {
+  /// Join a group's realtime room. Accepts a local or server id and resolves to
+  /// the server id the room is keyed by (no-op if the group hasn't synced yet —
+  /// the post-sync revision listener will join it then).
+  Future<void> joinGroup(String localOrServerId) async {
+    final sid =
+        await LocalStore.instance.serverIdFor('group', localOrServerId);
+    final id = (sid != null && sid.isNotEmpty) ? sid : localOrServerId;
     if (_joinedGroups.add(id)) SocketService.instance.joinGroup(id);
   }
 
   void disconnect() {
     _joinedGroups.clear();
+    if (_wired) SyncEngine.instance.revision.removeListener(_onSyncRevision);
     _wired = false;
     SocketService.instance.disconnect();
   }

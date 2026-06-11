@@ -26,7 +26,11 @@ class PersonalExpenseModel {
         amount: (j['amount'] as num).toDouble(),
         currency: j['currency'] as String? ?? 'PKR',
         category: j['category'] as String? ?? 'other',
-        date: DateTime.parse(j['date'] as String),
+        // Dates are stored/transported as UTC; convert to local so the screen
+        // groups them under the calendar day the user actually picked (a UTC
+        // instant would bucket a midnight entry under the previous day east of
+        // GMT, e.g. PKT +5).
+        date: DateTime.parse(j['date'] as String).toLocal(),
         note: j['note'] as String? ?? '',
         receiptUrl: j['receiptUrl'] as String? ?? '',
       );

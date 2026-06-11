@@ -475,12 +475,31 @@ class LocalStore {
   }
 
   Stream<Map<String, dynamic>?> watchGroupJson(String id) {
-    return (db.select(db.groups)..where((t) => t.id.equals(id))).watchSingleOrNull().asyncMap((g) async {
+    // Match by local id OR server id (deep links carry the server id), then key
+    // member lookups off the row's real local id.
+    return (db.select(db.groups)
+          ..where((t) => t.id.equals(id) | t.serverId.equals(id)))
+        .watchSingleOrNull()
+        .asyncMap((g) async {
       if (g == null) return null;
-      final members = await (db.select(db.groupMembers)..where((t) => t.groupId.equals(id))).get();
+      final members =
+          await (db.select(db.groupMembers)..where((t) => t.groupId.equals(g.id))).get();
       final users = await _userMap(members.map((m) => m.userId).toSet());
       return _groupToJson(g, members, users);
     });
+  }
+
+  /// Server ids of every (non-deleted) group, for socket room membership.
+  /// Socket rooms are keyed by the server id (`group:<serverId>`), so a group
+  /// created offline (whose local id is a uuid) must be joined by its server id
+  /// once it has synced. Unsynced groups have no server room yet, so they're
+  /// skipped until a later sync assigns them one.
+  Future<List<String>> allGroupServerIds() async {
+    final rows = await (db.select(db.groups)..where((t) => t.deletedAt.isNull())).get();
+    return [
+      for (final g in rows)
+        if ((g.serverId ?? '').isNotEmpty) g.serverId!
+    ];
   }
 
   // ── EXPENSES ────────────────────────────────────────────────────────────────
@@ -564,7 +583,11 @@ class LocalStore {
         })
         .watch()
         .asyncMap((_) async {
-      final e = await (db.select(db.expenses)..where((t) => t.id.equals(id))).getSingleOrNull();
+      // Match by local id OR server id: deep links from notifications carry the
+      // server id, but a locally-created expense's row id is a uuid.
+      final e = await (db.select(db.expenses)
+            ..where((t) => t.id.equals(id) | t.serverId.equals(id)))
+          .getSingleOrNull();
       return e == null ? null : (await _expensesToJson([e])).first;
     });
   }
@@ -574,13 +597,15 @@ class LocalStore {
       (db.select(db.settlements)..where((t) => t.groupId.equals(groupId) & t.deletedAt.isNull())).get();
 
   /// Merged expenses + settlement records for a group's Expenses tab.
-  Stream<List<Map<String, dynamic>>> watchGroupTransactionsJson(String groupId) {
+  Stream<List<Map<String, dynamic>>> watchGroupTransactionsJson(String rawGroupId) {
     return db
         .customSelect('SELECT 1 AS x', readsFrom: {
           db.expenses, db.expenseShares, db.expensePayers, db.settlements, db.users, db.groups, db.reactions,
         })
         .watch()
         .asyncMap((_) async {
+      // Accept a local or server id (deep links pass the server id).
+      final groupId = await _localIdFor(db.groups, rawGroupId);
       final exRows = await (db.select(db.expenses)
             ..where((t) => t.groupId.equals(groupId) & t.deletedAt.isNull())
             ..orderBy([(t) => OrderingTerm.desc(t.spentAt)]))
@@ -767,8 +792,12 @@ class LocalStore {
   Future<List<Map<String, dynamic>>> personalPage(
       {DateTime? from, DateTime? to, String? category, required int limit, required int offset}) async {
     final q = db.select(db.personalExpenses)..where((t) => t.deletedAt.isNull());
+    // Half-open interval [from, to): callers pass `to` as the start of the next
+    // period (exclusive). An inclusive upper bound would make a midnight-dated
+    // expense (what the date picker produces) also match the previous day's
+    // range, so it would show under the previous date too.
     if (from != null) q.where((t) => t.date.isBiggerOrEqualValue(from));
-    if (to != null) q.where((t) => t.date.isSmallerOrEqualValue(to));
+    if (to != null) q.where((t) => t.date.isSmallerThanValue(to));
     if (category != null) q.where((t) => t.category.equals(category));
     q
       ..orderBy([(t) => OrderingTerm.desc(t.date)])
@@ -860,7 +889,9 @@ class LocalStore {
         .asyncMap((_) => _computeGroupBalances(groupId));
   }
 
-  Future<Map<String, dynamic>> _computeGroupBalances(String groupId) async {
+  Future<Map<String, dynamic>> _computeGroupBalances(String rawGroupId) async {
+    // Accept a local or server id (deep links pass the server id).
+    final groupId = await _localIdFor(db.groups, rawGroupId);
     final members = await (db.select(db.groupMembers)..where((t) => t.groupId.equals(groupId))).get();
     final memberIds = members.map((m) => m.userId).toList();
     final expenses = await _expenseCalcs(groupId: groupId);

@@ -139,6 +139,31 @@ class PagedListNotifier<T> extends StateNotifier<PagedListState<T>> {
     await loadFirst();
   }
 
+  /// Re-fetch the pages already loaded in a single query and swap them in
+  /// *without* clearing the list first. A background sync refresh uses this so
+  /// the data updates in place instead of collapsing the whole list to a
+  /// shimmer and resetting scroll position (which is what [refresh] does).
+  Future<void> softRefresh() async {
+    if (_inFlight) return;
+    _inFlight = true;
+    try {
+      final pages = state.page < 1 ? 1 : state.page;
+      final res = await fetcher(1, limit * pages);
+      state = state.copyWith(
+        items: res.items,
+        page: pages,
+        hasMore: res.hasMore,
+        isLoadingFirst: false,
+        isLoadingMore: false,
+        clearError: true,
+      );
+    } catch (_) {
+      // Keep the existing items on a refresh failure — don't blank the screen.
+    } finally {
+      _inFlight = false;
+    }
+  }
+
   /// Optimistic local removal — remove a single item by id-predicate without
   /// re-fetching. Callers must follow up with [refresh] eventually so the
   /// server's [hasMore] / total stays accurate.

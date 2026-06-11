@@ -97,7 +97,7 @@ class _EditGroupScreenState extends ConsumerState<EditGroupScreen> {
     ref.invalidate(groupDetailProvider(groupId));
     ref.invalidate(groupBalancesProvider(groupId));
     ref.invalidate(expenseFeedProvider);
-    ref.invalidate(expenseFeedPagedProvider);
+    ref.read(expenseFeedPagedProvider.notifier).softRefresh();
     ref.invalidate(monthlyAnalyticsProvider);
     ref.invalidate(friendsSummaryProvider);
   }

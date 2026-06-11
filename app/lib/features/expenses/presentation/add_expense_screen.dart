@@ -189,11 +189,11 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
               receiptUrl: receiptUrl,
             );
         final gid = updated.groupId;
-        ref.invalidate(groupExpensesProvider(gid));
-        ref.invalidate(groupExpensesPagedProvider(gid));
-        ref.invalidate(groupBalancesProvider(gid));
-        ref.invalidate(expenseDetailProvider(updated.id));
-        ref.invalidate(expenseFeedProvider);
+        // The Drift-backed stream providers (group expenses preview, balances,
+        // detail, feed) update reactively from the local write — no invalidation
+        // needed (invalidating would just flash them through a reload). Only the
+        // paged transaction list isn't reactive, so refresh it in place.
+        ref.read(groupExpensesPagedProvider(gid).notifier).softRefresh();
       } else {
         await ref.read(expenseRepositoryProvider).create(
               groupId: widget.groupId!,
@@ -207,10 +207,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
               notes: _notes.text.trim(),
               receiptUrl: receiptUrl,
             );
-        ref.invalidate(groupExpensesProvider(widget.groupId!));
-        ref.invalidate(groupExpensesPagedProvider(widget.groupId!));
-        ref.invalidate(groupBalancesProvider(widget.groupId!));
-        ref.invalidate(expenseFeedProvider);
+        ref.read(groupExpensesPagedProvider(widget.groupId!).notifier).softRefresh();
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(

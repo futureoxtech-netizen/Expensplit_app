@@ -904,9 +904,9 @@ class _BalancesTab extends ConsumerWidget {
             amount: amount,
             currency: group.currency,
           );
-      ref.invalidate(groupBalancesProvider(group.id));
-      ref.invalidate(groupExpensesProvider(group.id));
-      ref.invalidate(groupExpensesPagedProvider(group.id));
+      // Balances + expenses preview are Drift streams — they update reactively
+      // from the local settlement write. Only the paged list needs a nudge.
+      ref.read(groupExpensesPagedProvider(group.id).notifier).softRefresh();
       if (context.mounted) {
         showAppFixedSheet(
           context: context,

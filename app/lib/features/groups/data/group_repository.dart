@@ -85,8 +85,9 @@ class GroupRepository {
   }
 
   Future<AddMemberOutcome> addMember(String groupId, String email) async {
+    final gid = await SyncEngine.instance.requireServerId('group', groupId);
     final res =
-        await _client.post('/groups/$groupId/members', body: {'email': email});
+        await _client.post('/groups/$gid/members', body: {'email': email});
     final json = res['data'] as Map<String, dynamic>;
     await _store.applyPull({'groups': [json]});
     return AddMemberOutcome(
@@ -107,7 +108,12 @@ class GroupRepository {
   /// Accept a pending invitation → become a member of the group.
   Future<GroupModel> acceptInvite(String groupId) async {
     final res = await _client.post('/groups/$groupId/invites/accept');
-    return GroupModel.fromJson(res['data'] as Map<String, dynamic>);
+    final json = res['data'] as Map<String, dynamic>;
+    // Land the joined group in the local DB so it shows immediately (and the
+    // realtime bridge joins its room on the next revision bump).
+    await _store.applyPull({'groups': [json]});
+    SyncEngine.instance.kick();
+    return GroupModel.fromJson(json);
   }
 
   /// Decline a pending invitation → it's removed.
@@ -118,8 +124,9 @@ class GroupRepository {
   /// Add a "guest" member (someone not on Expensplit) so expenses can be
   /// split with them. Returns the updated group with the new member.
   Future<GroupModel> addPlaceholder(String groupId, String name) async {
+    final gid = await SyncEngine.instance.requireServerId('group', groupId);
     final res = await _client.post(
-      '/groups/$groupId/placeholders',
+      '/groups/$gid/placeholders',
       body: {'name': name},
     );
     final json = res['data'] as Map<String, dynamic>;
@@ -130,7 +137,8 @@ class GroupRepository {
   /// Remove a member from the group. Used for guests added by mistake; the
   /// server rejects removal if the member already has expenses/settlements.
   Future<GroupModel> removeMember(String groupId, String memberId) async {
-    final res = await _client.delete('/groups/$groupId/members/$memberId');
+    final gid = await SyncEngine.instance.requireServerId('group', groupId);
+    final res = await _client.delete('/groups/$gid/members/$memberId');
     final json = res['data'] as Map<String, dynamic>;
     await _store.applyPull({'groups': [json]});
     return GroupModel.fromJson(json);
@@ -140,7 +148,8 @@ class GroupRepository {
   /// (you were the last real member), false if it lives on without you.
   /// Throws if you still have an unsettled balance.
   Future<bool> leave(String groupId) async {
-    final res = await _client.post('/groups/$groupId/leave');
+    final gid = await SyncEngine.instance.requireServerId('group', groupId);
+    final res = await _client.post('/groups/$gid/leave');
     final data = res['data'];
     // Drop the group locally — we're no longer in it.
     await _store.applyPull({'deletions': [{'entityType': 'group', 'entityId': groupId}]});
@@ -150,7 +159,8 @@ class GroupRepository {
 
   /// Permanently delete a group for everyone. Owner-only on the server.
   Future<void> deleteGroup(String groupId) async {
-    await _client.delete('/groups/$groupId');
+    final gid = await SyncEngine.instance.requireServerId('group', groupId);
+    await _client.delete('/groups/$gid');
     await _store.applyPull({'deletions': [{'entityType': 'group', 'entityId': groupId}]});
     SyncEngine.instance.kick();
   }

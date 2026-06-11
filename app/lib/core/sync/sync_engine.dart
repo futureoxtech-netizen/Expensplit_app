@@ -63,6 +63,30 @@ class SyncEngine {
   /// trip — used when a realtime payload already mutated the local DB directly.
   void bumpRevision() => revision.value++;
 
+  /// Resolve a local entity id to the server id the backend knows it by.
+  ///
+  /// After the offline DB was introduced, every id surfaced to the UI is a
+  /// *local* id (a uuid for anything created on this device, the server id for
+  /// anything pulled). Operations that still talk to the server directly
+  /// (invites, member changes, reactions, goal contributions) must translate
+  /// that local id back to the server id — otherwise the server can't find the
+  /// row and responds 404 ("We couldn't find what you were looking for").
+  ///
+  /// If the entity was created offline and hasn't been pushed yet, this flushes
+  /// the pending queue first so the create gets its server id, then retries.
+  /// Throws a friendly [StateError] if it still can't be resolved.
+  Future<String> requireServerId(String entityType, String localId) async {
+    var sid = await _store.serverIdFor(entityType, localId);
+    if (sid != null && sid.isNotEmpty) return sid;
+    // Not synced yet — push the pending create, then look again.
+    await sync();
+    sid = await _store.serverIdFor(entityType, localId);
+    if (sid == null || sid.isEmpty) {
+      throw StateError('This is still syncing — please try again in a moment.');
+    }
+    return sid;
+  }
+
   /// Request a sync soon (debounced). Safe to call frequently.
   void kick() {
     _debounce?.cancel();

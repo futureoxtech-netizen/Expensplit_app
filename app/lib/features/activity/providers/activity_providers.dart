@@ -14,12 +14,13 @@ final activityRepositoryProvider = Provider<ActivityRepository>(
 /// scroll listener.
 final activityFeedProvider = StateNotifierProvider.autoDispose<
     PagedListNotifier<ActivityItem>, PagedListState<ActivityItem>>((ref) {
-  ref.watch(syncRevisionProvider);
   final repo = ref.watch(activityRepositoryProvider);
-  return PagedListNotifier<ActivityItem>(
+  final notifier = PagedListNotifier<ActivityItem>(
     fetcher: (page, limit) => repo.feed(page: page, limit: limit),
     limit: 30,
   );
+  ref.listen(syncRevisionProvider, (_, __) => notifier.softRefresh());
+  return notifier;
 });
 
 /// Per-group activity. Kept separate so dashboards / group screens can

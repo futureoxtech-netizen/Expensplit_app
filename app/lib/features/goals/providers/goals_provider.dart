@@ -27,13 +27,14 @@ final goalsListProvider = FutureProvider.family<GoalsPage, String?>(
 final goalsListPagedProvider = StateNotifierProvider.autoDispose.family<
     PagedListNotifier<GoalModel>, PagedListState<GoalModel>, String?>(
   (ref, status) {
-    ref.watch(syncRevisionProvider);
     final repo = ref.watch(goalsRepositoryProvider);
-    return PagedListNotifier<GoalModel>(
+    final notifier = PagedListNotifier<GoalModel>(
       fetcher: (page, limit) =>
           repo.listPaged(status: status, page: page, limit: limit),
       limit: 20,
     );
+    ref.listen(syncRevisionProvider, (_, __) => notifier.softRefresh());
+    return notifier;
   },
 );
 

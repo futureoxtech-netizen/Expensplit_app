@@ -1,4 +1,5 @@
 import '../../../core/network/dio_client.dart';
+import '../../../core/sync/sync_engine.dart';
 import 'reaction_model.dart';
 
 class ReactionRepository {
@@ -12,9 +13,11 @@ class ReactionRepository {
     required String targetId,
     required String emoji,
   }) async {
+    // targetId is a local id; the server keys reactions by its own id.
+    final sid = await SyncEngine.instance.requireServerId(targetType, targetId);
     final res = await _client.post('/reactions', body: {
       'targetType': targetType,
-      'targetId': targetId,
+      'targetId': sid,
       'emoji': emoji,
     });
     return _reactionsFrom(res);
@@ -25,7 +28,8 @@ class ReactionRepository {
     required String targetType,
     required String targetId,
   }) async {
-    final res = await _client.delete('/reactions/$targetType/$targetId');
+    final sid = await SyncEngine.instance.requireServerId(targetType, targetId);
+    final res = await _client.delete('/reactions/$targetType/$sid');
     return _reactionsFrom(res);
   }
 

@@ -74,9 +74,8 @@ final friendDetailProvider =
 final friendTransactionsPagedProvider = StateNotifierProvider.autoDispose
     .family<PagedListNotifier<FriendTransaction>,
         PagedListState<FriendTransaction>, String>((ref, friendId) {
-  ref.watch(syncRevisionProvider);
   final myId = ref.watch(authProvider.select((s) => s.user?.id));
-  return PagedListNotifier<FriendTransaction>(
+  final notifier = PagedListNotifier<FriendTransaction>(
     fetcher: (page, limit) async {
       if (myId == null) return PagedResult(items: const [], hasMore: false);
       final list = await LocalStore.instance
@@ -86,4 +85,6 @@ final friendTransactionsPagedProvider = StateNotifierProvider.autoDispose
     },
     limit: 30,
   );
+  ref.listen(syncRevisionProvider, (_, __) => notifier.softRefresh());
+  return notifier;
 });

@@ -15,8 +15,10 @@ class PersonalExpenseRepository {
   }
 
   bool _inRange(PersonalExpenseModel e, DateTime? from, DateTime? to, String? category) {
+    // Half-open interval [from, to) — matches personalPage so a midnight-dated
+    // expense doesn't leak into the previous period (see LocalStore.personalPage).
     if (from != null && e.date.isBefore(from)) return false;
-    if (to != null && e.date.isAfter(to)) return false;
+    if (to != null && !e.date.isBefore(to)) return false;
     if (category != null && e.category != category) return false;
     return true;
   }

@@ -83,7 +83,8 @@ class ExpenseModel {
       tip: ((j['tip'] ?? 0) as num).toDouble(),
       receiptUrl: j['receiptUrl'] as String?,
       spentAt:
-          DateTime.tryParse(j['spentAt']?.toString() ?? '') ?? DateTime.now(),
+          DateTime.tryParse(j['spentAt']?.toString() ?? '')?.toLocal() ??
+              DateTime.now(),
       reactions: parseReactions(j['reactions']),
     );
   }

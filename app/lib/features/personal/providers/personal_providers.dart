@@ -29,9 +29,8 @@ final personalExpensesPagedProvider = StateNotifierProvider.autoDispose.family<
     PagedListNotifier<PersonalExpenseModel>,
     PagedListState<PersonalExpenseModel>,
     (DateTime, DateTime)>((ref, range) {
-  ref.watch(syncRevisionProvider);
   final repo = ref.watch(personalExpenseRepositoryProvider);
-  return PagedListNotifier<PersonalExpenseModel>(
+  final notifier = PagedListNotifier<PersonalExpenseModel>(
     fetcher: (page, limit) => repo.listPaged(
       from: range.$1,
       to: range.$2,
@@ -40,6 +39,8 @@ final personalExpensesPagedProvider = StateNotifierProvider.autoDispose.family<
     ),
     limit: 30,
   );
+  ref.listen(syncRevisionProvider, (_, __) => notifier.softRefresh());
+  return notifier;
 });
 
 // Summary for chart

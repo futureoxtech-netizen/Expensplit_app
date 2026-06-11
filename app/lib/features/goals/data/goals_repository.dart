@@ -118,7 +118,8 @@ class GoalsRepository {
     String note = '',
     DateTime? date,
   }) async {
-    final res = await _client.post('/goals/$goalId/contributions', body: {
+    final gid = await SyncEngine.instance.requireServerId('goal', goalId);
+    final res = await _client.post('/goals/$gid/contributions', body: {
       'amount': amount,
       'note': note,
       if (date != null) 'date': date.toIso8601String(),
@@ -139,8 +140,9 @@ class GoalsRepository {
     if (amount != null) body['amount'] = amount;
     if (note != null) body['note'] = note;
     if (date != null) body['date'] = date.toIso8601String();
+    final gid = await SyncEngine.instance.requireServerId('goal', goalId);
     final res = await _client.patch(
-        '/goals/$goalId/contributions/$contributionId',
+        '/goals/$gid/contributions/$contributionId',
         body: body);
     final json = res['data'] as Map<String, dynamic>;
     await _store.applyPull({'goals': [json]});
@@ -148,7 +150,8 @@ class GoalsRepository {
   }
 
   Future<GoalModel> removeContribution(String goalId, String contributionId) async {
-    final res = await _client.delete('/goals/$goalId/contributions/$contributionId');
+    final gid = await SyncEngine.instance.requireServerId('goal', goalId);
+    final res = await _client.delete('/goals/$gid/contributions/$contributionId');
     final json = res['data'] as Map<String, dynamic>;
     await _store.applyPull({'goals': [json]});
     return GoalModel.fromJson(json);

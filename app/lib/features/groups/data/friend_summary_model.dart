@@ -75,7 +75,7 @@ class FriendTransaction {
         currency: j['currency'] as String,
         totalAmount: (j['totalAmount'] as num).toDouble(),
         net: (j['net'] as num).toDouble(),
-        date: DateTime.parse(j['date'].toString()),
+        date: DateTime.parse(j['date'].toString()).toLocal(),
       );
 
   final String type; // 'expense' | 'settlement'
