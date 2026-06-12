@@ -233,6 +233,51 @@ class SyncEngine {
         if (id != null) await _dio.delete('/goals/$id');
         await _store.hardDeleteAfterSync('goal', localId);
         return _PushOutcome.done;
+
+      case 'loan:create':
+        final res = await _dio.post('/loans', body: payload);
+        await _store.applyServerId('loan', localId!, _idOf(res['data']));
+        return _PushOutcome.done;
+
+      case 'loan:delete':
+        final id = await _store.serverIdFor('loan', localId!);
+        if (id != null) await _dio.delete('/loans/$id');
+        await _store.hardDeleteAfterSync('loan', localId);
+        return _PushOutcome.done;
+
+      case 'loanPayment:create':
+        // The parent loan must have a server id before we push the payment.
+        final loanLocalId = payload['loanLocalId']?.toString();
+        if (loanLocalId == null) return _PushOutcome.done;
+        final loanServerId = await _store.serverIdFor('loan', loanLocalId);
+        if (loanServerId == null) return _PushOutcome.defer;
+        final res = await _dio.post('/loans/$loanServerId/payments', body: {
+          'amount': payload['amount'],
+          'note': payload['note'] ?? '',
+          'method': payload['method'] ?? 'cash',
+          if (payload['paidAt'] != null) 'paidAt': payload['paidAt'],
+          'clientOpId': payload['clientOpId'],
+        });
+        // Store returned payment serverId on local row.
+        final paymentServerId = _idOf(res['data']);
+        await _store.db.customStatement(
+          'UPDATE loan_payments SET server_id = ?, dirty = 0 WHERE id = ?',
+          [paymentServerId, localId!],
+        );
+        return _PushOutcome.done;
+
+      case 'loanPayment:delete':
+        // Parent loan must be synced before its payment can be deleted server-side.
+        final delLoanLocalId = payload['loanLocalId']?.toString();
+        final delLoanServerId =
+            delLoanLocalId != null ? await _store.serverIdFor('loan', delLoanLocalId) : null;
+        final delPaymentServerId = payload['paymentServerId']?.toString();
+        if (delLoanServerId == null) return _PushOutcome.defer;
+        if (delPaymentServerId != null) {
+          await _dio.delete('/loans/$delLoanServerId/payments/$delPaymentServerId');
+        }
+        await _store.hardDeleteAfterSync('loanPayment', localId!);
+        return _PushOutcome.done;
     }
     return _PushOutcome.done; // unknown op — drop it
   }

@@ -34,6 +34,8 @@ import '../../features/auth/presentation/verify_reset_screen.dart';
 import '../../features/auth/presentation/reset_password_screen.dart';
 import '../../features/goals/presentation/goals_screen.dart';
 import '../../features/goals/presentation/goal_detail_screen.dart';
+import '../../features/loans/presentation/loans_screen.dart';
+import '../../features/loans/presentation/loan_detail_screen.dart';
 
 /// Shared by GoRouter and any service that needs a root overlay or navigator
 /// outside the widget tree (e.g. [InAppBanner]). Don't pass new instances to
@@ -133,6 +135,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/friends', builder: (_, __) => const FriendsSummaryScreen()),
           GoRoute(path: '/tracker', builder: (_, __) => const PersonalTrackerScreen()),
           GoRoute(path: '/goals', builder: (_, __) => const GoalsScreen()),
+          GoRoute(path: '/loans', builder: (_, __) => const LoansScreen()),
           GoRoute(path: '/activity', builder: (_, __) => const ActivityScreen()),
           GoRoute(path: '/profile', builder: (_, __) => const ProfileScreen()),
         ],
@@ -194,6 +197,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/goals/:id',
         builder: (_, s) => GoalDetailScreen(goalId: s.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '/loans/:id',
+        builder: (_, s) => LoanDetailScreen(loanId: s.pathParameters['id']!),
       ),
     ],
   );

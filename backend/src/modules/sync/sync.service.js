@@ -7,6 +7,7 @@ import { Goal } from '../goals/goal.model.js';
 import { User } from '../users/user.model.js';
 import { Tombstone } from './tombstone.model.js';
 import { reactionService } from '../reactions/reaction.service.js';
+import { loanService } from '../loans/loan.service.js';
 
 // Populate specs mirror the existing list endpoints so the Flutter client can
 // reuse its `fromJson` parsers unchanged.
@@ -45,7 +46,7 @@ export const syncService = {
       for (const p of g.pendingMembers ?? []) memberUserIds.add(p.user.toString());
     }
 
-    const [groups, expenses, settlements, personalExpenses, goals, activity, users, tombstones] =
+    const [groups, expenses, settlements, personalExpenses, goals, activity, users, tombstones, loans] =
       await Promise.all([
         Group.find({ 'members.user': userId, ...changedSince() })
           .sort({ updatedAt: 1 }).limit(page)
@@ -78,6 +79,7 @@ export const syncService = {
           .sort({ deletedAt: 1 }).limit(page)
           .select('entityType entityId groupId deletedAt')
           .lean(),
+        loanService.deltaSince({ userId, since, limit: page }),
       ]);
 
     // Each collection is sorted ascending, so the last item carries its largest
@@ -94,6 +96,7 @@ export const syncService = {
       [users, 'updatedAt'],
       [activity, 'createdAt'],
       [tombstones, 'deletedAt'],
+      [loans, 'updatedAt'],
     ];
     const fullLastTs = [];
     for (const [arr, field] of collections) {
@@ -132,6 +135,7 @@ export const syncService = {
       goals,
       activity,
       users,
+      loans,
       deletions: tombstones.map((t) => ({
         entityType: t.entityType,
         entityId: t.entityId,

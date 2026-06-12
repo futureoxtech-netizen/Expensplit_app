@@ -178,6 +178,63 @@ class Reactions extends Table {
   Set<Column> get primaryKey => {targetType, targetId, emoji, userId};
 }
 
+// ── LOAN FEATURE ─────────────────────────────────────────────────────────────
+
+/// Local-only contacts (no app account). Used as counterparties for loans.
+class GuestContacts extends Table {
+  TextColumn get id => text()();
+  TextColumn get name => text().withDefault(const Constant(''))();
+  TextColumn get phone => text().nullable()();
+  TextColumn get email => text().nullable()();
+  TextColumn get avatarColor => text().withDefault(const Constant('#6C5CE7'))();
+  DateTimeColumn get createdAt => dateTime().nullable()();
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// A single loan record. `loanType` is from the creating user's perspective:
+///   'given' = I lent money to counterparty
+///   'taken' = I borrowed money from counterparty
+class Loans extends Table {
+  TextColumn get id => text()();
+  TextColumn get serverId => text().nullable()();
+  TextColumn get counterpartyId => text()();
+  TextColumn get counterpartyType => text().withDefault(const Constant('guest'))(); // 'user'|'guest'
+  TextColumn get counterpartyName => text().withDefault(const Constant(''))();
+  TextColumn get counterpartyAvatar => text().nullable()();
+  TextColumn get loanType => text().withDefault(const Constant('given'))(); // 'given'|'taken'
+  RealColumn get amount => real().withDefault(const Constant(0))();
+  RealColumn get paidAmount => real().withDefault(const Constant(0))();
+  TextColumn get currency => text().withDefault(const Constant('PKR'))();
+  TextColumn get description => text().withDefault(const Constant(''))();
+  TextColumn get notes => text().withDefault(const Constant(''))();
+  DateTimeColumn get dueDate => dateTime().nullable()();
+  // 'pending_approval' | 'active' | 'settled' | 'rejected'
+  TextColumn get status => text().withDefault(const Constant('active'))();
+  DateTimeColumn get createdAt => dateTime().nullable()();
+  DateTimeColumn get updatedAt => dateTime().nullable()();
+  DateTimeColumn get deletedAt => dateTime().nullable()();
+  BoolColumn get dirty => boolean().withDefault(const Constant(false))();
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Individual payment records against a loan.
+class LoanPayments extends Table {
+  TextColumn get id => text()();
+  TextColumn get serverId => text().nullable()();
+  TextColumn get loanId => text()();
+  RealColumn get amount => real().withDefault(const Constant(0))();
+  TextColumn get note => text().withDefault(const Constant(''))();
+  TextColumn get method => text().withDefault(const Constant('cash'))();
+  DateTimeColumn get paidAt => dateTime().nullable()();
+  DateTimeColumn get createdAt => dateTime().nullable()();
+  DateTimeColumn get deletedAt => dateTime().nullable()();
+  BoolColumn get dirty => boolean().withDefault(const Constant(false))();
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 /// Pending offline mutations, replayed FIFO by the SyncEngine.
 class SyncQueue extends Table {
   TextColumn get opId => text()();
@@ -212,6 +269,9 @@ class SyncMeta extends Table {
   Goals,
   Activities,
   Reactions,
+  GuestContacts,
+  Loans,
+  LoanPayments,
   SyncQueue,
   SyncMeta,
 ])
@@ -222,13 +282,18 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forExecutor(super.e);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) => m.createAll(),
         onUpgrade: (m, from, to) async {
           if (from < 2) await m.createTable(reactions);
+          if (from < 3) {
+            await m.createTable(guestContacts);
+            await m.createTable(loans);
+            await m.createTable(loanPayments);
+          }
         },
       );
 

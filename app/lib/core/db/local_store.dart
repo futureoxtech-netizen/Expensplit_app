@@ -48,7 +48,9 @@ class LocalStore {
         nonEmpty('personalExpenses') ||
         nonEmpty('goals') ||
         nonEmpty('activity') ||
+        nonEmpty('loans') ||
         nonEmpty('deletions');
+    final myId = currentUser?['_id']?.toString() ?? '';
     await db.transaction(() async {
       for (final u in (data['users'] as List? ?? [])) {
         await _upsertUser(u as Map<String, dynamic>);
@@ -70,6 +72,9 @@ class LocalStore {
       }
       for (final a in (data['activity'] as List? ?? [])) {
         await _upsertActivity(a as Map<String, dynamic>);
+      }
+      for (final l in (data['loans'] as List? ?? [])) {
+        await _upsertLoan(l as Map<String, dynamic>, myId);
       }
       for (final d in (data['deletions'] as List? ?? [])) {
         await _applyDeletion(d as Map<String, dynamic>);
@@ -382,6 +387,11 @@ class LocalStore {
         break;
       case 'goal':
         await (db.delete(db.goals)..where((t) => t.serverId.equals(id) | t.id.equals(id))).go();
+        break;
+      case 'loan':
+        final localLoan = await _localIdFor(db.loans, id);
+        await (db.delete(db.loanPayments)..where((t) => t.loanId.equals(localLoan))).go();
+        await (db.delete(db.loans)..where((t) => t.id.equals(localLoan))).go();
         break;
       case 'group':
         // Cascade: drop the group and everything under it (using its local id,
@@ -1448,6 +1458,8 @@ class LocalStore {
         return (await (db.select(db.personalExpenses)..where((t) => t.id.equals(localId))).getSingleOrNull())?.serverId;
       case 'goal':
         return (await (db.select(db.goals)..where((t) => t.id.equals(localId))).getSingleOrNull())?.serverId;
+      case 'loan':
+        return (await (db.select(db.loans)..where((t) => t.id.equals(localId))).getSingleOrNull())?.serverId;
     }
     return null;
   }
@@ -1474,6 +1486,10 @@ class LocalStore {
       case 'goal':
         await (db.update(db.goals)..where((t) => t.id.equals(localId)))
             .write(GoalsCompanion(serverId: Value(serverId), dirty: const Value(false)));
+        break;
+      case 'loan':
+        await (db.update(db.loans)..where((t) => t.id.equals(localId)))
+            .write(LoansCompanion(serverId: Value(serverId), dirty: const Value(false)));
         break;
     }
   }
@@ -1509,6 +1525,396 @@ class LocalStore {
       case 'goal':
         await (db.delete(db.goals)..where((t) => t.id.equals(localId))).go();
         break;
+      case 'loan':
+        await (db.delete(db.loanPayments)..where((t) => t.loanId.equals(localId))).go();
+        await (db.delete(db.loans)..where((t) => t.id.equals(localId))).go();
+        break;
+      case 'loanPayment':
+        await (db.delete(db.loanPayments)..where((t) => t.id.equals(localId))).go();
+        break;
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // GUEST CONTACTS
+  // ───────────────────────────────────────────────────────────────────────────
+  Future<String> createGuestContactLocal({
+    required String name,
+    String? phone,
+    String? email,
+    String? avatarColor,
+  }) async {
+    final id = newId();
+    await db.into(db.guestContacts).insert(GuestContactsCompanion.insert(
+          id: id,
+          name: Value(name),
+          phone: Value(phone),
+          email: Value(email),
+          avatarColor: Value(avatarColor ?? '#6C5CE7'),
+          createdAt: Value(DateTime.now()),
+        ));
+    return id;
+  }
+
+  Future<void> updateGuestContactLocal(String id, {String? name, String? phone, String? email}) async {
+    await (db.update(db.guestContacts)..where((t) => t.id.equals(id))).write(GuestContactsCompanion(
+          name: name != null ? Value(name) : const Value.absent(),
+          phone: phone != null ? Value(phone) : const Value.absent(),
+          email: email != null ? Value(email) : const Value.absent(),
+        ));
+  }
+
+  Future<void> deleteGuestContactLocal(String id) async {
+    await (db.delete(db.guestContacts)..where((t) => t.id.equals(id))).go();
+  }
+
+  Stream<List<Map<String, dynamic>>> watchGuestContactsJson() {
+    return (db.select(db.guestContacts)..orderBy([(t) => OrderingTerm.asc(t.name)]))
+        .watch()
+        .map((rows) => [
+              for (final c in rows)
+                {
+                  '_id': c.id,
+                  'name': c.name,
+                  'phone': c.phone,
+                  'email': c.email,
+                  'avatarColor': c.avatarColor,
+                  'isGuest': true,
+                }
+            ]);
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // LOANS
+  // ───────────────────────────────────────────────────────────────────────────
+
+  Future<Map<String, dynamic>> _loanToJson(Loan loan, List<LoanPayment> payments) async {
+    return {
+      '_id': loan.id,
+      'serverId': loan.serverId,
+      'counterpartyId': loan.counterpartyId,
+      'counterpartyType': loan.counterpartyType,
+      'counterpartyName': loan.counterpartyName,
+      'counterpartyAvatar': loan.counterpartyAvatar,
+      'loanType': loan.loanType,
+      'amount': loan.amount,
+      'paidAmount': loan.paidAmount,
+      'currency': loan.currency,
+      'description': loan.description,
+      'notes': loan.notes,
+      'dueDate': _iso(loan.dueDate),
+      'status': loan.status,
+      'createdAt': _iso(loan.createdAt),
+      'updatedAt': _iso(loan.updatedAt),
+      'payments': [
+        for (final p in payments)
+          {
+            '_id': p.id,
+            'loanId': p.loanId,
+            'amount': p.amount,
+            'note': p.note,
+            'method': p.method,
+            'paidAt': _iso(p.paidAt),
+            'createdAt': _iso(p.createdAt),
+          }
+      ],
+    };
+  }
+
+  Stream<List<Map<String, dynamic>>> watchLoansJson() {
+    return db
+        .customSelect('SELECT 1 AS x', readsFrom: {db.loans, db.loanPayments})
+        .watch()
+        .asyncMap((_) async {
+      final loanRows = await (db.select(db.loans)
+            ..where((t) => t.deletedAt.isNull())
+            ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
+          .get();
+      final ids = loanRows.map((l) => l.id).toList();
+      if (ids.isEmpty) return <Map<String, dynamic>>[];
+      final payments = await (db.select(db.loanPayments)
+            ..where((t) => t.loanId.isIn(ids) & t.deletedAt.isNull())
+            ..orderBy([(t) => OrderingTerm.asc(t.paidAt)]))
+          .get();
+      final paymentsByLoan = <String, List<LoanPayment>>{};
+      for (final p in payments) {
+        paymentsByLoan.putIfAbsent(p.loanId, () => []).add(p);
+      }
+      return [
+        for (final loan in loanRows)
+          await _loanToJson(loan, paymentsByLoan[loan.id] ?? [])
+      ];
+    });
+  }
+
+  Stream<Map<String, dynamic>?> watchLoanJson(String id) {
+    return db
+        .customSelect('SELECT 1 AS x', readsFrom: {db.loans, db.loanPayments})
+        .watch()
+        .asyncMap((_) async {
+      final loan = await (db.select(db.loans)
+            ..where((t) => (t.id.equals(id) | t.serverId.equals(id)) & t.deletedAt.isNull()))
+          .getSingleOrNull();
+      if (loan == null) return null;
+      final payments = await (db.select(db.loanPayments)
+            ..where((t) => t.loanId.equals(loan.id) & t.deletedAt.isNull())
+            ..orderBy([(t) => OrderingTerm.asc(t.paidAt)]))
+          .get();
+      return _loanToJson(loan, payments);
+    });
+  }
+
+  Future<String> createLoanLocal({
+    required String counterpartyId,
+    required String counterpartyType,
+    required String counterpartyName,
+    String? counterpartyAvatar,
+    required String loanType,
+    required double amount,
+    required String currency,
+    String description = '',
+    String notes = '',
+    DateTime? dueDate,
+    String? forcedStatus,
+  }) async {
+    final id = newId();
+    final opId = newId();
+    // Guest loans are local-only and immediately active. App-user loans need
+    // the counterparty to confirm: the creator's own copy is 'pending_sent'
+    // (awaiting them), while the counterparty's pulled copy is 'pending_approval'
+    // (they must act) — see [_upsertLoan].
+    final status = forcedStatus ?? (counterpartyType == 'guest' ? 'active' : 'pending_sent');
+    await db.into(db.loans).insert(LoansCompanion.insert(
+          id: id,
+          counterpartyId: counterpartyId,
+          counterpartyType: Value(counterpartyType),
+          counterpartyName: Value(counterpartyName),
+          counterpartyAvatar: Value(counterpartyAvatar),
+          loanType: Value(loanType),
+          amount: Value(amount),
+          currency: Value(currency),
+          description: Value(description),
+          notes: Value(notes),
+          dueDate: Value(dueDate),
+          status: Value(status),
+          createdAt: Value(DateTime.now()),
+          updatedAt: Value(DateTime.now()),
+          dirty: const Value(true),
+        ));
+    // Only queue server sync when counterparty is an app user.
+    if (counterpartyType == 'user') {
+      await enqueue(
+        opId: opId,
+        entityType: 'loan',
+        opType: 'create',
+        entityLocalId: id,
+        payload: {
+          'borrowerId': loanType == 'given' ? counterpartyId : currentUser?['_id'] ?? '',
+          'lenderId': loanType == 'given' ? currentUser?['_id'] ?? '' : counterpartyId,
+          'amount': amount,
+          'currency': currency,
+          'description': description,
+          'notes': notes,
+          if (dueDate != null) 'dueDate': _iso(dueDate),
+          'clientOpId': opId,
+        },
+      );
+    }
+    return id;
+  }
+
+  Future<void> updateLoanStatusLocal(String id, String status) async {
+    await (db.update(db.loans)..where((t) => t.id.equals(id) | t.serverId.equals(id)))
+        .write(LoansCompanion(status: Value(status), updatedAt: Value(DateTime.now())));
+  }
+
+  Future<void> updateLoanPaidAmountLocal(String loanId) async {
+    final payments = await (db.select(db.loanPayments)
+          ..where((t) => t.loanId.equals(loanId) & t.deletedAt.isNull()))
+        .get();
+    final loan = await (db.select(db.loans)..where((t) => t.id.equals(loanId))).getSingleOrNull();
+    if (loan == null) return;
+    final total = payments.fold(0.0, (s, p) => s + p.amount);
+    final paid = total.clamp(0.0, loan.amount);
+    final newStatus = paid >= loan.amount ? 'settled' : (loan.status == 'settled' ? 'active' : loan.status);
+    await (db.update(db.loans)..where((t) => t.id.equals(loanId))).write(LoansCompanion(
+          paidAmount: Value(paid),
+          status: Value(newStatus),
+          updatedAt: Value(DateTime.now()),
+        ));
+  }
+
+  Future<void> deleteLoanLocal(String id) async {
+    await (db.update(db.loans)..where((t) => t.id.equals(id)))
+        .write(LoansCompanion(deletedAt: Value(DateTime.now()), dirty: const Value(true)));
+    // Find serverId to enqueue delete.
+    final loan = await (db.select(db.loans)..where((t) => t.id.equals(id))).getSingleOrNull();
+    if (loan?.serverId != null && loan!.counterpartyType == 'user') {
+      await enqueue(entityType: 'loan', opType: 'delete', entityLocalId: id, payload: {});
+    }
+  }
+
+  // ── LOAN PAYMENTS ──────────────────────────────────────────────────────────
+  Future<String> createLoanPaymentLocal({
+    required String loanId,
+    required double amount,
+    String note = '',
+    String method = 'cash',
+    DateTime? paidAt,
+  }) async {
+    final id = newId();
+    final opId = newId();
+    final loan = await (db.select(db.loans)..where((t) => t.id.equals(loanId))).getSingleOrNull();
+    await db.into(db.loanPayments).insert(LoanPaymentsCompanion.insert(
+          id: id,
+          loanId: loanId,
+          amount: Value(amount),
+          note: Value(note),
+          method: Value(method),
+          paidAt: Value(paidAt ?? DateTime.now()),
+          createdAt: Value(DateTime.now()),
+          dirty: const Value(true),
+        ));
+    await updateLoanPaidAmountLocal(loanId);
+    // Queue server sync only for app-user loans that are synced.
+    if (loan != null && loan.counterpartyType == 'user' && loan.serverId != null) {
+      await enqueue(
+        opId: opId,
+        entityType: 'loanPayment',
+        opType: 'create',
+        entityLocalId: id,
+        payload: {
+          'loanLocalId': loanId,
+          'amount': amount,
+          'note': note,
+          'method': method,
+          if (paidAt != null) 'paidAt': _iso(paidAt),
+          'clientOpId': opId,
+        },
+      );
+    }
+    return id;
+  }
+
+  Future<void> deleteLoanPaymentLocal(String paymentId, String loanId) async {
+    final payment =
+        await (db.select(db.loanPayments)..where((t) => t.id.equals(paymentId))).getSingleOrNull();
+    final loan = await (db.select(db.loans)..where((t) => t.id.equals(loanId))).getSingleOrNull();
+    final isSynced = loan != null && loan.counterpartyType == 'user';
+
+    if (payment != null && isSynced && payment.serverId != null) {
+      // Already on the server — soft-delete locally (so a pull can't resurrect
+      // it via the dirty guard) and queue a server-side delete.
+      await (db.update(db.loanPayments)..where((t) => t.id.equals(paymentId)))
+          .write(LoanPaymentsCompanion(deletedAt: Value(DateTime.now()), dirty: const Value(true)));
+      await enqueue(
+        entityType: 'loanPayment',
+        opType: 'delete',
+        entityLocalId: paymentId,
+        payload: {'loanLocalId': loanId, 'paymentServerId': payment.serverId},
+      );
+    } else if (payment != null && isSynced) {
+      // Created offline and not yet pushed — cancel the pending create so it
+      // never reaches the server, then hard-delete the local row.
+      await (db.delete(db.syncQueue)
+            ..where((t) =>
+                t.entityType.equals('loanPayment') & t.entityLocalId.equals(paymentId)))
+          .go();
+      await (db.delete(db.loanPayments)..where((t) => t.id.equals(paymentId))).go();
+    } else {
+      // Guest (local-only) loan — nothing to sync, just remove it.
+      await (db.delete(db.loanPayments)..where((t) => t.id.equals(paymentId))).go();
+    }
+    await updateLoanPaidAmountLocal(loanId);
+  }
+
+  // ── LOAN PULL (from /sync) ─────────────────────────────────────────────────
+  Future<void> _upsertLoan(Map<String, dynamic> j, String myId) async {
+    final serverId = _idOf(j);
+    final id = await _localIdFor(db.loans, serverId);
+    if (await _isDirty(db.loans, id)) return;
+
+    final lender = j['lender'];
+    final borrower = j['borrower'];
+    final lenderId = lender is Map ? _idOf(lender) : lender.toString();
+    final borrowerId = borrower is Map ? _idOf(borrower) : borrower.toString();
+
+    final isLender = lenderId == myId;
+    final loanType = isLender ? 'given' : 'taken';
+    final counterparty = isLender ? borrower : lender;
+    final counterpartyId = isLender ? borrowerId : lenderId;
+    final counterpartyName = counterparty is Map ? (counterparty['name'] ?? '') : '';
+    final counterpartyAvatar = counterparty is Map ? counterparty['avatarUrl'] : null;
+
+    // A pending loan reads differently per viewer: the creator is *awaiting*
+    // the counterparty's decision ('pending_sent'), the counterparty must act
+    // on it ('pending_approval'). The server stores a single 'pending_approval'.
+    final createdById = _idOf(j['createdBy']);
+    var status = j['status']?.toString() ?? 'active';
+    if (status == 'pending_approval' && createdById == myId) {
+      status = 'pending_sent';
+    }
+
+    await db.into(db.loans).insertOnConflictUpdate(LoansCompanion.insert(
+          id: id,
+          serverId: Value(serverId),
+          counterpartyId: counterpartyId.toString(),
+          counterpartyType: const Value('user'),
+          counterpartyName: Value(counterpartyName.toString()),
+          counterpartyAvatar: Value(counterpartyAvatar?.toString()),
+          loanType: Value(loanType),
+          amount: Value((j['amount'] as num?)?.toDouble() ?? 0),
+          paidAmount: Value((j['paidAmount'] as num?)?.toDouble() ?? 0),
+          currency: Value(j['currency']?.toString() ?? 'PKR'),
+          description: Value(j['description']?.toString() ?? ''),
+          notes: Value(j['notes']?.toString() ?? ''),
+          dueDate: Value(_date(j['dueDate'])),
+          status: Value(status),
+          createdAt: Value(_date(j['createdAt'])),
+          updatedAt: Value(_date(j['updatedAt'])),
+          dirty: const Value(false),
+        ));
+
+    // Reconcile payments. Resolve each server payment to its stable local id
+    // (an offline-created payment keeps its uuid `id` with `server_id` set) so
+    // we update that row instead of inserting a duplicate keyed by the server
+    // id. Un-pushed local (dirty) rows — e.g. a payment deleted offline and
+    // queued for a server delete — are left untouched so the pull can't
+    // resurrect them.
+    final keepIds = <String>[];
+    for (final p in (j['payments'] as List? ?? [])) {
+      if (p is! Map) continue;
+      final pServerId = _idOf(p);
+      final pLocalId = await _localIdFor(db.loanPayments, pServerId);
+      keepIds.add(pLocalId);
+      if (await _isDirty(db.loanPayments, pLocalId)) continue; // keep local change
+      await db.into(db.loanPayments).insertOnConflictUpdate(LoanPaymentsCompanion.insert(
+            id: pLocalId,
+            serverId: Value(pServerId),
+            loanId: id,
+            amount: Value((p['amount'] as num?)?.toDouble() ?? 0),
+            note: Value(p['note']?.toString() ?? ''),
+            method: Value(p['method']?.toString() ?? 'cash'),
+            paidAt: Value(_date(p['paidAt'])),
+            createdAt: Value(_date(p['createdAt'])),
+            dirty: const Value(false),
+          ));
+    }
+    // Drop server-synced payments that no longer exist remotely (deleted on
+    // another device), but never touch dirty rows that still need to push.
+    await (db.delete(db.loanPayments)
+          ..where((t) =>
+              t.loanId.equals(id) &
+              t.dirty.equals(false) &
+              (keepIds.isEmpty ? const Constant(true) : t.id.isNotIn(keepIds))))
+        .go();
+    // If un-pushed local payments survived (created or deleted offline), the
+    // server's paidAmount is stale — recompute optimistically from local rows.
+    final dirtyLeft = await (db.select(db.loanPayments)
+          ..where((t) => t.loanId.equals(id) & t.dirty.equals(true)))
+        .get();
+    if (dirtyLeft.isNotEmpty) {
+      await updateLoanPaidAmountLocal(id);
     }
   }
 

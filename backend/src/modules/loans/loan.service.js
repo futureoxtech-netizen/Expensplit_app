@@ -1,0 +1,300 @@
+import { Loan } from './loan.model.js';
+import { LoanPayment } from './loan_payment.model.js';
+import { User } from '../users/user.model.js';
+import { notifyUser } from '../../services/notifications.service.js';
+import { BadRequest, NotFound, Forbidden } from '../../utils/errors.js';
+
+const POPULATE_USERS = [
+  { path: 'lender', select: 'name email avatarUrl' },
+  { path: 'borrower', select: 'name email avatarUrl' },
+  { path: 'createdBy', select: 'name email avatarUrl' },
+];
+
+function loanToJson(loan, payments = []) {
+  return {
+    _id: loan._id,
+    lender: loan.lender,
+    borrower: loan.borrower,
+    amount: loan.amount,
+    paidAmount: loan.paidAmount,
+    currency: loan.currency,
+    description: loan.description,
+    notes: loan.notes,
+    dueDate: loan.dueDate,
+    status: loan.status,
+    createdBy: loan.createdBy,
+    createdAt: loan.createdAt,
+    updatedAt: loan.updatedAt,
+    payments,
+  };
+}
+
+export const loanService = {
+  // ── Create a loan ──────────────────────────────────────────────────────────
+  // The creator may be either the lender ("I lent X") or the borrower ("I
+  // borrowed from X"). The *other* party (the counterparty) must approve.
+  async create({ creatorId, lenderId, borrowerId, amount, currency, description, notes, dueDate, clientOpId }) {
+    const creator = creatorId.toString();
+    const lenderStr = lenderId.toString();
+    const borrowerStr = borrowerId.toString();
+    if (lenderStr === borrowerStr) {
+      throw new BadRequest('Lender and borrower must be different people');
+    }
+    if (creator !== lenderStr && creator !== borrowerStr) {
+      throw new Forbidden('You must be a party to this loan');
+    }
+
+    // Idempotency: return existing if clientOpId matches.
+    if (clientOpId) {
+      const existing = await Loan.findOne({ clientOpId })
+        .populate(POPULATE_USERS)
+        .lean();
+      if (existing) return loanToJson(existing);
+    }
+
+    const [lender, borrower] = await Promise.all([
+      User.findById(lenderId).lean(),
+      User.findById(borrowerId).lean(),
+    ]);
+    if (!lender) throw new NotFound('Lender not found');
+    if (!borrower) throw new NotFound('Borrower not found');
+
+    const loan = await Loan.create({
+      lender: lenderId,
+      borrower: borrowerId,
+      amount,
+      currency: currency ?? 'PKR',
+      description: description ?? '',
+      notes: notes ?? '',
+      dueDate: dueDate ? new Date(dueDate) : null,
+      status: 'pending_approval',
+      createdBy: creatorId,
+      clientOpId: clientOpId ?? null,
+    });
+
+    const populated = await Loan.findById(loan._id).populate(POPULATE_USERS).lean();
+
+    // Notify the counterparty (the party who didn't create it) to review.
+    const creatorIsLender = creator === lenderStr;
+    const counterpartyId = creatorIsLender ? borrowerId : lenderId;
+    const creatorUser = creatorIsLender ? lender : borrower;
+    await notifyUser(counterpartyId, {
+      title: `Loan request from ${creatorUser.name}`,
+      message: creatorIsLender
+        ? `${creatorUser.name} says they lent you ${currency} ${amount}${description ? ` for "${description}"` : ''}. Tap to review.`
+        : `${creatorUser.name} says they borrowed ${currency} ${amount} from you${description ? ` for "${description}"` : ''}. Tap to review.`,
+      type: 'loan.pending_approval',
+      data: { loanId: loan._id.toString() },
+    });
+
+    return loanToJson(populated);
+  },
+
+  // ── Approve a loan ─────────────────────────────────────────────────────────
+  // Only the counterparty (the party who didn't create the loan) may approve.
+  async approve({ loanId, userId }) {
+    const loan = await Loan.findById(loanId).populate(POPULATE_USERS);
+    if (!loan || loan.deletedAt) throw new NotFound('Loan not found');
+    const uid = userId.toString();
+    const lenderId = loan.lender._id.toString();
+    const borrowerId = loan.borrower._id.toString();
+    if (uid === loan.createdBy.toString() || (uid !== lenderId && uid !== borrowerId)) {
+      throw new Forbidden('Only the other party can approve this loan');
+    }
+    if (loan.status !== 'pending_approval') {
+      throw new BadRequest('Loan is not awaiting approval');
+    }
+    loan.status = 'active';
+    await loan.save();
+
+    const approver = uid === lenderId ? loan.lender : loan.borrower;
+    await notifyUser(loan.createdBy, {
+      title: 'Loan confirmed',
+      message: `${approver.name} confirmed the loan of ${loan.currency} ${loan.amount}.`,
+      type: 'loan.approved',
+      data: { loanId: loanId.toString() },
+    });
+
+    return loanToJson(loan.toObject());
+  },
+
+  // ── Reject a loan ──────────────────────────────────────────────────────────
+  // Only the counterparty (the party who didn't create the loan) may reject.
+  async reject({ loanId, userId }) {
+    const loan = await Loan.findById(loanId).populate(POPULATE_USERS);
+    if (!loan || loan.deletedAt) throw new NotFound('Loan not found');
+    const uid = userId.toString();
+    const lenderId = loan.lender._id.toString();
+    const borrowerId = loan.borrower._id.toString();
+    if (uid === loan.createdBy.toString() || (uid !== lenderId && uid !== borrowerId)) {
+      throw new Forbidden('Only the other party can reject this loan');
+    }
+    if (loan.status !== 'pending_approval') {
+      throw new BadRequest('Loan is not awaiting approval');
+    }
+    loan.status = 'rejected';
+    await loan.save();
+
+    const rejecter = uid === lenderId ? loan.lender : loan.borrower;
+    await notifyUser(loan.createdBy, {
+      title: 'Loan rejected',
+      message: `${rejecter.name} rejected the loan request of ${loan.currency} ${loan.amount}.`,
+      type: 'loan.rejected',
+      data: { loanId: loanId.toString() },
+    });
+
+    return loanToJson(loan.toObject());
+  },
+
+  // ── Record a payment ───────────────────────────────────────────────────────
+  async recordPayment({ loanId, userId, amount, note, method, paidAt, clientOpId }) {
+    const loan = await Loan.findById(loanId).populate(POPULATE_USERS);
+    if (!loan || loan.deletedAt) throw new NotFound('Loan not found');
+    const lenderId = loan.lender._id.toString();
+    const borrowerId = loan.borrower._id.toString();
+    const uid = userId.toString();
+    if (uid !== lenderId && uid !== borrowerId) {
+      throw new Forbidden('Only lender or borrower can record payments');
+    }
+    if (loan.status === 'rejected') throw new BadRequest('Cannot add payment to a rejected loan');
+
+    // Idempotency
+    if (clientOpId) {
+      const existing = await LoanPayment.findOne({ clientOpId }).lean();
+      if (existing) return existing;
+    }
+
+    const payment = await LoanPayment.create({
+      loan: loanId,
+      amount,
+      note: note ?? '',
+      method: method ?? 'cash',
+      paidAt: paidAt ? new Date(paidAt) : new Date(),
+      recordedBy: userId,
+      clientOpId: clientOpId ?? null,
+    });
+
+    // Update the loan's paidAmount and possibly settle it.
+    const allPayments = await LoanPayment.find({ loan: loanId, deletedAt: null }).lean();
+    const totalPaid = allPayments.reduce((s, p) => s + p.amount, 0);
+    loan.paidAmount = Math.min(totalPaid, loan.amount);
+    if (loan.paidAmount >= loan.amount) loan.status = 'settled';
+    else if (loan.status !== 'active') loan.status = 'active'; // reactivate if was pending
+    await loan.save();
+
+    // Notify the other party.
+    const otherId = uid === lenderId ? borrowerId : lenderId;
+    const actor = uid === lenderId ? loan.lender : loan.borrower;
+    await notifyUser(otherId, {
+      title: 'Payment recorded',
+      message: `${actor.name} recorded a payment of ${loan.currency} ${amount} on your loan.`,
+      type: 'loan.payment',
+      data: { loanId: loanId.toString() },
+    });
+
+    return payment;
+  },
+
+  // ── List loans for a user ──────────────────────────────────────────────────
+  async listForUser({ userId, status }) {
+    const filter = {
+      $or: [{ lender: userId }, { borrower: userId }],
+      deletedAt: null,
+    };
+    if (status) filter.status = status;
+
+    const loans = await Loan.find(filter)
+      .sort({ updatedAt: -1 })
+      .populate(POPULATE_USERS)
+      .lean();
+
+    return Promise.all(
+      loans.map(async (loan) => {
+        const payments = await LoanPayment.find({ loan: loan._id, deletedAt: null })
+          .sort({ paidAt: -1 })
+          .lean();
+        return loanToJson(loan, payments);
+      })
+    );
+  },
+
+  // ── Get a single loan ──────────────────────────────────────────────────────
+  async getById({ loanId, userId }) {
+    const loan = await Loan.findById(loanId).populate(POPULATE_USERS).lean();
+    if (!loan || loan.deletedAt) throw new NotFound('Loan not found');
+    const lenderId = loan.lender._id.toString();
+    const borrowerId = loan.borrower._id.toString();
+    if (userId.toString() !== lenderId && userId.toString() !== borrowerId) {
+      throw new Forbidden('Access denied');
+    }
+    const payments = await LoanPayment.find({ loan: loanId, deletedAt: null })
+      .sort({ paidAt: -1 })
+      .lean();
+    return loanToJson(loan, payments);
+  },
+
+  // ── Delete a loan (soft) ───────────────────────────────────────────────────
+  async deleteLoan({ loanId, userId }) {
+    const loan = await Loan.findById(loanId);
+    if (!loan || loan.deletedAt) throw new NotFound('Loan not found');
+    if (loan.createdBy.toString() !== userId.toString()) {
+      throw new Forbidden('Only the creator can delete this loan');
+    }
+    loan.deletedAt = new Date();
+    await loan.save();
+    return { ok: true };
+  },
+
+  // ── Delete a payment ───────────────────────────────────────────────────────
+  async deletePayment({ paymentId, loanId, userId }) {
+    const payment = await LoanPayment.findOne({ _id: paymentId, loan: loanId });
+    if (!payment || payment.deletedAt) throw new NotFound('Payment not found');
+    if (payment.recordedBy.toString() !== userId.toString()) {
+      throw new Forbidden('Only the recorder can delete this payment');
+    }
+    payment.deletedAt = new Date();
+    await payment.save();
+
+    // Recalculate paidAmount.
+    const loan = await Loan.findById(loanId);
+    if (loan) {
+      const allPayments = await LoanPayment.find({ loan: loanId, deletedAt: null }).lean();
+      loan.paidAmount = Math.min(
+        allPayments.reduce((s, p) => s + p.amount, 0),
+        loan.amount
+      );
+      if (loan.status === 'settled' && loan.paidAmount < loan.amount) {
+        loan.status = 'active';
+      }
+      await loan.save();
+    }
+    return { ok: true };
+  },
+
+  // ── Delta sync: loans for user changed since a timestamp ──────────────────
+  async deltaSince({ userId, since, limit = 300 }) {
+    const sinceDate = since ? new Date(since) : null;
+    const changedSince = sinceDate && !Number.isNaN(sinceDate.getTime())
+      ? { updatedAt: { $gt: sinceDate } }
+      : {};
+
+    const loans = await Loan.find({
+      $or: [{ lender: userId }, { borrower: userId }],
+      deletedAt: null,
+      ...changedSince,
+    })
+      .sort({ updatedAt: 1 })
+      .limit(limit)
+      .populate(POPULATE_USERS)
+      .lean();
+
+    return Promise.all(
+      loans.map(async (loan) => {
+        const payments = await LoanPayment.find({ loan: loan._id, deletedAt: null })
+          .sort({ paidAt: -1 })
+          .lean();
+        return loanToJson(loan, payments);
+      })
+    );
+  },
+};

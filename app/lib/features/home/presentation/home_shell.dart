@@ -8,6 +8,7 @@ import '../../../shared/widgets/avatar.dart';
 import '../../activity/providers/unread_provider.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../groups/providers/group_providers.dart';
+import '../../loans/providers/loan_providers.dart';
 import '../../settings/settings_providers.dart';
 
 /// Five-tab bottom navigation with a "More" tab that opens a styled
@@ -30,6 +31,7 @@ class HomeShell extends ConsumerWidget {
   // Routes that should show "More" as the selected tab.
   static const _secondaryRoutes = <String>{
     '/goals',
+    '/loans',
     '/activity',
     '/profile',
     '/reports',
@@ -137,6 +139,7 @@ class _MoreSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(authProvider).user;
     final unread = ref.watch(unreadActivityProvider);
+    final loansPending = ref.watch(pendingApprovalCountProvider);
     final mode = ref.watch(themeModeProvider);
     final cs = Theme.of(context).colorScheme;
 
@@ -225,6 +228,17 @@ class _MoreSheet extends ConsumerWidget {
                   onTap: () {
                     Navigator.pop(context);
                     context.go('/goals');
+                  },
+                ),
+                _MoreTile(
+                  icon: Icons.account_balance_wallet_rounded,
+                  label: 'Khata Book',
+                  subtitle: 'Track personal loans & dues',
+                  selected: currentLoc.startsWith('/loans'),
+                  badgeCount: loansPending,
+                  onTap: () {
+                    Navigator.pop(context);
+                    context.go('/loans');
                   },
                 ),
                 _MoreTile(
