@@ -15,6 +15,8 @@ function loanToJson(loan, payments = []) {
     _id: loan._id,
     lender: loan.lender,
     borrower: loan.borrower,
+    counterpartyType: loan.counterpartyType ?? 'user',
+    guestCounterparty: loan.guestCounterparty ?? null,
     amount: loan.amount,
     paidAmount: loan.paidAmount,
     currency: loan.currency,
@@ -33,7 +35,43 @@ export const loanService = {
   // ── Create a loan ──────────────────────────────────────────────────────────
   // The creator may be either the lender ("I lent X") or the borrower ("I
   // borrowed from X"). The *other* party (the counterparty) must approve.
-  async create({ creatorId, lenderId, borrowerId, amount, currency, description, notes, dueDate, clientOpId }) {
+  // For guest loans, pass loanType + guestCounterparty instead of lenderId/borrowerId.
+  async create({ creatorId, lenderId, borrowerId, loanType, guestCounterparty, amount, currency, description, notes, dueDate, clientOpId }) {
+    // ── Guest loan: counterparty is not a registered user ───────────────────
+    if (guestCounterparty) {
+      if (!loanType) throw new BadRequest('loanType is required for guest loans');
+
+      // Idempotency
+      if (clientOpId) {
+        const existing = await Loan.findOne({ clientOpId }).lean();
+        if (existing) return loanToJson(existing);
+      }
+
+      const isLender = loanType === 'given';
+      const loan = await Loan.create({
+        lender: isLender ? creatorId : null,
+        borrower: isLender ? null : creatorId,
+        counterpartyType: 'guest',
+        guestCounterparty: {
+          clientId: guestCounterparty.clientId ?? null,
+          name: guestCounterparty.name ?? '',
+          phone: guestCounterparty.phone ?? null,
+          email: guestCounterparty.email ?? null,
+          avatarColor: guestCounterparty.avatarColor ?? '#6C5CE7',
+        },
+        amount,
+        currency: currency ?? 'PKR',
+        description: description ?? '',
+        notes: notes ?? '',
+        dueDate: dueDate ? new Date(dueDate) : null,
+        status: 'active', // guest loans need no approval
+        createdBy: creatorId,
+        clientOpId: clientOpId ?? null,
+      });
+      return loanToJson(loan.toObject());
+    }
+
+    // ── User-to-user loan ───────────────────────────────────────────────────
     const creator = creatorId.toString();
     const lenderStr = lenderId.toString();
     const borrowerStr = borrowerId.toString();
@@ -62,6 +100,7 @@ export const loanService = {
     const loan = await Loan.create({
       lender: lenderId,
       borrower: borrowerId,
+      counterpartyType: 'user',
       amount,
       currency: currency ?? 'PKR',
       description: description ?? '',
@@ -84,7 +123,7 @@ export const loanService = {
         ? `${creatorUser.name} says they lent you ${currency} ${amount}${description ? ` for "${description}"` : ''}. Tap to review.`
         : `${creatorUser.name} says they borrowed ${currency} ${amount} from you${description ? ` for "${description}"` : ''}. Tap to review.`,
       type: 'loan.pending_approval',
-      data: { loanId: loan._id.toString() },
+      data: { loanId: loan._id.toString(), route: `/loans/${loan._id.toString()}` },
     });
 
     return loanToJson(populated);
@@ -112,7 +151,7 @@ export const loanService = {
       title: 'Loan confirmed',
       message: `${approver.name} confirmed the loan of ${loan.currency} ${loan.amount}.`,
       type: 'loan.approved',
-      data: { loanId: loanId.toString() },
+      data: { loanId: loanId.toString(), route: `/loans/${loanId.toString()}` },
     });
 
     return loanToJson(loan.toObject());
@@ -140,7 +179,7 @@ export const loanService = {
       title: 'Loan rejected',
       message: `${rejecter.name} rejected the loan request of ${loan.currency} ${loan.amount}.`,
       type: 'loan.rejected',
-      data: { loanId: loanId.toString() },
+      data: { loanId: loanId.toString(), route: `/loans/${loanId.toString()}` },
     });
 
     return loanToJson(loan.toObject());
@@ -189,7 +228,7 @@ export const loanService = {
       title: 'Payment recorded',
       message: `${actor.name} recorded a payment of ${loan.currency} ${amount} on your loan.`,
       type: 'loan.payment',
-      data: { loanId: loanId.toString() },
+      data: { loanId: loanId.toString(), route: `/loans/${loanId.toString()}` },
     });
 
     return payment;

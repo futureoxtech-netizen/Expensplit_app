@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../core/sync/sync_engine.dart';
 import '../../../core/sync/sync_providers.dart';
-import '../../../core/db/local_store.dart';
 import '../data/guest_contact_model.dart';
 import '../data/loan_model.dart';
 import '../data/loan_repository.dart';
@@ -63,6 +62,24 @@ final pendingApprovalCountProvider = Provider.autoDispose<int>((ref) {
       );
 });
 
+/// Pending approvals shown in the "Owe Me" tab — i.e. someone claims they
+/// borrowed from me, so my copy is loanType 'given' and awaits my confirmation.
+final pendingGivenCountProvider = Provider.autoDispose<int>((ref) {
+  return ref.watch(pendingApprovalLoansProvider).maybeWhen(
+        data: (list) => list.where((l) => l.loanType == 'given').length,
+        orElse: () => 0,
+      );
+});
+
+/// Pending approvals shown in the "I Owe" tab — someone claims they lent me
+/// money, so my copy is loanType 'taken' and awaits my confirmation.
+final pendingTakenCountProvider = Provider.autoDispose<int>((ref) {
+  return ref.watch(pendingApprovalLoansProvider).maybeWhen(
+        data: (list) => list.where((l) => l.loanType == 'taken').length,
+        orElse: () => 0,
+      );
+});
+
 /// Summary totals across all loans.
 final loanSummaryProvider = Provider.autoDispose<LoanSummary>((ref) {
   final all = ref.watch(loansProvider).valueOrNull ?? [];
@@ -99,23 +116,6 @@ final loanDetailProvider = StreamProvider.autoDispose.family<LoanModel?, String>
 /// All guest contacts (local only).
 final guestContactsProvider = StreamProvider.autoDispose<List<GuestContactModel>>((ref) {
   return ref.read(loanRepositoryProvider).watchGuestContacts();
-});
-
-/// All app users cached in local DB (for contact picker), excluding the
-/// current user (you can't owe a loan to yourself) and placeholder users.
-final appUsersProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
-  final myId = LocalStore.instance.currentUser?['_id']?.toString();
-  final rows = await LocalStore.instance.db.select(LocalStore.instance.db.users).get();
-  return rows
-      .where((u) => !u.isPlaceholder && u.id != myId)
-      .map((u) => {
-            '_id': u.id,
-            'name': u.name,
-            'email': u.email,
-            'avatarUrl': u.avatarUrl,
-            'isGuest': false,
-          })
-      .toList();
 });
 
 class LoanSummary {

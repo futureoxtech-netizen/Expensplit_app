@@ -42,18 +42,21 @@ class AdService {
   bool            _appOpenAdLoading  = false;
   bool            _appOpenAdShowing  = false;
 
-  // Track how many expenses the user has added this session.
-  // Show interstitial every 3rd save to avoid being intrusive.
-  int _expenseSaveCount = 0;
+  // Track how many records (expenses, loans, goals, personal entries…) the user
+  // has added this session. Show an interstitial every 3rd save so monetisation
+  // stays in the background without nagging.
+  int _recordSaveCount = 0;
   static const int _interstitialFrequency = 3;
 
   // ── Initialization ─────────────────────────────────────────────────────────
   Future<void> init() async {
     if (!_adsSupported) return;
     await MobileAds.instance.initialize();
-    // Pre-load both ads immediately so they are ready when needed.
+    // Pre-load the interstitial so it's ready after a few records are saved.
+    // The App Open ad is intentionally NOT loaded/shown — it interrupted users
+    // every time the app came to the foreground, which was disruptive. Banner +
+    // cadence-based interstitial ads remain the monetisation surfaces.
     loadInterstitial();
-    loadAppOpenAd();
   }
 
   // ── Interstitial ───────────────────────────────────────────────────────────
@@ -75,14 +78,19 @@ class AdService {
     );
   }
 
-  /// Call this after every successful expense save.
-  /// Shows an interstitial every [_interstitialFrequency] saves.
-  Future<void> onExpenseSaved() async {
+  /// Call this after every successful record save (expense, loan, goal,
+  /// personal entry, payment…). Shows an interstitial every
+  /// [_interstitialFrequency] saves so the cadence is shared across the whole
+  /// app rather than per-feature.
+  Future<void> onRecordSaved() async {
     if (!_adsSupported) return;
-    _expenseSaveCount++;
-    if (_expenseSaveCount % _interstitialFrequency != 0) return;
+    _recordSaveCount++;
+    if (_recordSaveCount % _interstitialFrequency != 0) return;
     await showInterstitial();
   }
+
+  /// Back-compat alias — group expenses already call this.
+  Future<void> onExpenseSaved() => onRecordSaved();
 
   Future<void> showInterstitial() async {
     if (_interstitial == null) {

@@ -222,6 +222,27 @@ class AuthRepository {
     throw Exception('Failed to update profile');
   }
 
+  // ── Profile payment methods ─────────────────────────────────────────────────
+  // Each call returns the full updated user, which we persist to cache so the
+  // auth state stays the single source of truth.
+  Future<UserModel> addPaymentMethod(Map<String, dynamic> input) =>
+      _savePaymentMethod(() => _client.raw.post('/users/me/payment-methods', data: input));
+
+  Future<UserModel> updatePaymentMethod(String methodId, Map<String, dynamic> input) =>
+      _savePaymentMethod(
+          () => _client.raw.patch('/users/me/payment-methods/$methodId', data: input));
+
+  Future<UserModel> deletePaymentMethod(String methodId) =>
+      _savePaymentMethod(() => _client.raw.delete('/users/me/payment-methods/$methodId'));
+
+  Future<UserModel> _savePaymentMethod(Future<Response> Function() request) async {
+    final res = await request();
+    _checkOkOrThrow(res.data, statusCode: res.statusCode);
+    final data = res.data['data'] as Map<String, dynamic>;
+    await TokenStorage.instance.saveUserJson(jsonEncode(data));
+    return UserModel.fromJson(data);
+  }
+
   /// Upload a new avatar image. On web, [bytes] + [filename] are used
   /// (dart:io File is not available). On mobile, pass [file].
   Future<UserModel> uploadAvatar({File? file, Uint8List? bytes, String? filename}) async {

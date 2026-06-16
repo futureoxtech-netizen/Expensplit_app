@@ -12,6 +12,7 @@ import uploadRoutes from '../modules/uploads/upload.routes.js';
 import appConfigRoutes from '../modules/appConfig/appConfig.routes.js';
 import syncRoutes from '../modules/sync/sync.routes.js';
 import loanRoutes from '../modules/loans/loan.routes.js';
+import guestContactRoutes from '../modules/loans/guest_contact.routes.js';
 
 export const router = Router();
 
@@ -37,3 +38,4 @@ router.use('/uploads', uploadRoutes);
 router.use('/app', appConfigRoutes);
 router.use('/sync', syncRoutes);
 router.use('/loans', loanRoutes);
+router.use('/guest-contacts', guestContactRoutes);

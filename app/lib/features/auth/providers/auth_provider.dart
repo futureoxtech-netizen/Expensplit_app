@@ -198,6 +198,24 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(user: updated);
   }
 
+  /// Add a payment method to the user's profile. Updates state on success.
+  Future<void> addPaymentMethod(Map<String, dynamic> input) async {
+    final updated = await _repo.addPaymentMethod(input);
+    state = state.copyWith(user: updated);
+  }
+
+  /// Edit an existing profile payment method.
+  Future<void> updatePaymentMethod(String methodId, Map<String, dynamic> input) async {
+    final updated = await _repo.updatePaymentMethod(methodId, input);
+    state = state.copyWith(user: updated);
+  }
+
+  /// Remove a profile payment method.
+  Future<void> deletePaymentMethod(String methodId) async {
+    final updated = await _repo.deletePaymentMethod(methodId);
+    state = state.copyWith(user: updated);
+  }
+
   /// Change the logged-in user's password. Throws if the current password
   /// is wrong or the account has no password (Google sign-in).
   Future<void> changePassword({

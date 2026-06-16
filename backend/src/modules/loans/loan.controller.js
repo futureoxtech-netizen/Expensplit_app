@@ -3,11 +3,13 @@ import { loanService } from './loan.service.js';
 export const loanController = {
   async create(req, res, next) {
     try {
-      const { lenderId, borrowerId, amount, currency, description, notes, dueDate, clientOpId } = req.body;
+      const { lenderId, borrowerId, loanType, guestCounterparty, amount, currency, description, notes, dueDate, clientOpId } = req.body;
       const loan = await loanService.create({
         creatorId: req.user.id,
         lenderId,
         borrowerId,
+        loanType,
+        guestCounterparty,
         amount,
         currency,
         description,
@@ -15,7 +17,7 @@ export const loanController = {
         dueDate,
         clientOpId,
       });
-      res.status(201).json({ data: loan });
+      res.status(201).json({ ok: true, data: loan });
     } catch (err) {
       next(err);
     }
@@ -24,7 +26,7 @@ export const loanController = {
   async approve(req, res, next) {
     try {
       const loan = await loanService.approve({ loanId: req.params.id, userId: req.user.id });
-      res.json({ data: loan });
+      res.json({ ok: true, data: loan });
     } catch (err) {
       next(err);
     }
@@ -33,7 +35,7 @@ export const loanController = {
   async reject(req, res, next) {
     try {
       const loan = await loanService.reject({ loanId: req.params.id, userId: req.user.id });
-      res.json({ data: loan });
+      res.json({ ok: true, data: loan });
     } catch (err) {
       next(err);
     }
@@ -51,7 +53,7 @@ export const loanController = {
         paidAt,
         clientOpId,
       });
-      res.status(201).json({ data: payment });
+      res.status(201).json({ ok: true, data: payment });
     } catch (err) {
       next(err);
     }
@@ -74,7 +76,7 @@ export const loanController = {
     try {
       const { status } = req.query;
       const loans = await loanService.listForUser({ userId: req.user.id, status });
-      res.json({ data: loans });
+      res.json({ ok: true, data: loans });
     } catch (err) {
       next(err);
     }
@@ -83,7 +85,7 @@ export const loanController = {
   async getById(req, res, next) {
     try {
       const loan = await loanService.getById({ loanId: req.params.id, userId: req.user.id });
-      res.json({ data: loan });
+      res.json({ ok: true, data: loan });
     } catch (err) {
       next(err);
     }

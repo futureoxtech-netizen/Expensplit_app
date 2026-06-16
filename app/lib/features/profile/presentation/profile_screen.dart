@@ -168,6 +168,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             onTap: () => context.push('/profile/edit'),
           ),
           _Tile(
+            icon: Icons.account_balance_wallet_rounded,
+            title: 'Payment information',
+            subtitle: user == null || user.paymentMethods.isEmpty
+                ? 'Add bank or wallet details to get paid back'
+                : '${user.paymentMethods.length} saved · share them in groups',
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => context.push('/profile/payment-methods'),
+          ),
+          _Tile(
             icon: Icons.lock_outline_rounded,
             title: 'Change password',
             subtitle: 'Update your account password',

@@ -13,6 +13,7 @@ import { notifyUser, notifyUsers, notifyGroup, actorName } from '../../services/
 import { deleteManyFromS3 } from '../../middleware/upload.js';
 import { effectivePayers } from '../../utils/expensePayers.js';
 import { recordTombstone } from '../sync/tombstone.model.js';
+import { paymentToJson } from '../../utils/paymentFields.js';
 
 // Populate spec shared by every method that returns a group to the client, so
 // members *and* pending members always arrive with their user details filled
@@ -84,6 +85,24 @@ async function purgeGroup(group) {
   ]);
   deleteManyFromS3(withReceipts.map((e) => e.receiptUrl)).catch(() => {});
   await group.deleteOne();
+}
+
+// Serialise a group's shared payment infos for the client, attaching the
+// owner's public details so the UI can show "Pay <name>" with an avatar.
+function serializePaymentInfos(group) {
+  return (group.paymentInfos ?? []).map((info) => {
+    const u = info.user;
+    const populated = u && typeof u === 'object' && u._id;
+    return {
+      ...paymentToJson(info),
+      userId: (populated ? u._id : u).toString(),
+      user: populated
+        ? { id: u._id.toString(), name: u.name ?? '', avatarUrl: u.avatarUrl ?? '' }
+        : null,
+      createdAt: info.createdAt,
+      updatedAt: info.updatedAt,
+    };
+  });
 }
 
 export const groupService = {
@@ -742,5 +761,59 @@ export const groupService = {
     }));
 
     return { balances, transfers: transfersWithUsers };
+  },
+
+  // ── Shared payment information ───────────────────────────────────────────────
+  // Any member can list the group's shared payment details, add their own
+  // (manually or imported from their profile), edit them and remove them. You
+  // can only edit/remove entries you added.
+  async listPaymentInfos({ userId, groupId }) {
+    const group = await findGroupForMember(groupId, userId);
+    await group.populate({ path: 'paymentInfos.user', select: 'name avatarUrl' });
+    return serializePaymentInfos(group);
+  },
+
+  async addPaymentInfo({ userId, groupId, data }) {
+    const group = await findGroupForMember(groupId, userId);
+    const mine = group.paymentInfos.filter((p) => p.user.toString() === userId.toString());
+    if (mine.length >= 10) {
+      throw BadRequest('You can share up to 10 payment methods in a group.', 'PAYMENT_INFO_LIMIT');
+    }
+    group.paymentInfos.push({ ...data, user: userId });
+    await group.save();
+    await group.populate({ path: 'paymentInfos.user', select: 'name avatarUrl' });
+    emitToGroup(group._id, 'group:updated', { groupId: group._id.toString() });
+    return serializePaymentInfos(group);
+  },
+
+  async updatePaymentInfo({ userId, groupId, infoId, data }) {
+    const group = await findGroupForMember(groupId, userId);
+    const info = group.paymentInfos.id(infoId);
+    if (!info) throw NotFound('Payment info not found');
+    if (info.user.toString() !== userId.toString()) {
+      throw Forbidden('You can only edit payment info you added');
+    }
+    info.set(data);
+    await group.save();
+    await group.populate({ path: 'paymentInfos.user', select: 'name avatarUrl' });
+    emitToGroup(group._id, 'group:updated', { groupId: group._id.toString() });
+    return serializePaymentInfos(group);
+  },
+
+  async deletePaymentInfo({ userId, groupId, infoId }) {
+    const group = await findGroupForMember(groupId, userId);
+    const info = group.paymentInfos.id(infoId);
+    if (!info) throw NotFound('Payment info not found');
+    // The owner can remove their own; group admins/owners can remove anyone's.
+    const role = group.roleOf(userId);
+    const isOwnerOrAdmin = ['owner', 'admin'].includes(role);
+    if (info.user.toString() !== userId.toString() && !isOwnerOrAdmin) {
+      throw Forbidden('You can only remove payment info you added');
+    }
+    info.deleteOne();
+    await group.save();
+    await group.populate({ path: 'paymentInfos.user', select: 'name avatarUrl' });
+    emitToGroup(group._id, 'group:updated', { groupId: group._id.toString() });
+    return serializePaymentInfos(group);
   },
 };

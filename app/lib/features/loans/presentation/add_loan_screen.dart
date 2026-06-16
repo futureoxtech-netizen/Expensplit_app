@@ -1,14 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/error_messages.dart';
+import '../../../core/services/ad_service.dart';
 import '../../../core/utils/amount_input_formatter.dart';
 import '../../../core/utils/formatters.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../data/guest_contact_model.dart';
-import '../data/loan_repository.dart';
 import '../providers/loan_providers.dart';
 
 class AddLoanSheet extends ConsumerStatefulWidget {
@@ -63,6 +65,7 @@ class _AddLoanSheetState extends ConsumerState<AddLoanSheet> {
         notes: _notesCtrl.text.trim(),
         dueDate: _dueDate,
       );
+      unawaited(AdService.instance.onRecordSaved());
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) showErrorSnack(context, e);
@@ -440,28 +443,64 @@ class _ContactPickerSheetState extends ConsumerState<ContactPickerSheet> {
   final _searchCtrl = TextEditingController();
   String _query = '';
 
+  // App users are found by querying the server (name OR email) instead of
+  // listing every cached user — a long local list is noisy and made it easy to
+  // pick the wrong person. Results are debounced and only fetched once the
+  // query is specific enough (≥2 chars), so an exact email reliably surfaces
+  // the right account.
+  Timer? _debounce;
+  bool _searching = false;
+  List<Map<String, dynamic>> _userResults = [];
+
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  void _onQueryChanged(String v) {
+    setState(() => _query = v);
+    _debounce?.cancel();
+    final q = v.trim();
+    if (q.length < 2) {
+      setState(() {
+        _searching = false;
+        _userResults = [];
+      });
+      return;
+    }
+    setState(() => _searching = true);
+    _debounce = Timer(const Duration(milliseconds: 350), () async {
+      final results =
+          await ref.read(loanRepositoryProvider).searchAppUsers(q);
+      // Don't exclude self here — the server already drops placeholder users;
+      // the current user is filtered out below so you can't lend to yourself.
+      final myId = ref.read(authProvider).user?.id;
+      if (!mounted) return;
+      setState(() {
+        _userResults = results.where((u) => u['_id'] != myId).toList();
+        _searching = false;
+      });
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final guestAsync = ref.watch(guestContactsProvider);
-    final appUsersAsync = ref.watch(appUsersProvider);
     final theme = Theme.of(context);
 
     final guests = guestAsync.valueOrNull ?? [];
-    final appUsers = appUsersAsync.valueOrNull ?? [];
 
-    final q = _query.toLowerCase();
+    final q = _query.trim().toLowerCase();
     final filteredGuests = q.isEmpty
         ? guests
-        : guests.where((c) => c.name.toLowerCase().contains(q)).toList();
-    final filteredUsers = q.isEmpty
-        ? appUsers
-        : appUsers.where((u) => (u['name'] ?? '').toString().toLowerCase().contains(q)).toList();
+        : guests.where((c) {
+            final hay =
+                '${c.name} ${c.email ?? ''} ${c.phone ?? ''}'.toLowerCase();
+            return hay.contains(q);
+          }).toList();
+    final filteredUsers = _userResults;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.85,
@@ -509,9 +548,20 @@ class _ContactPickerSheetState extends ConsumerState<ContactPickerSheet> {
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
               child: TextField(
                 controller: _searchCtrl,
+                keyboardType: TextInputType.emailAddress,
                 decoration: InputDecoration(
-                  hintText: 'Search by name…',
+                  hintText: 'Search guests, or find a user by email…',
                   prefixIcon: const Icon(Icons.search_rounded),
+                  suffixIcon: _searching
+                      ? const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : null,
                   contentPadding: const EdgeInsets.symmetric(vertical: 10),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -519,7 +569,7 @@ class _ContactPickerSheetState extends ConsumerState<ContactPickerSheet> {
                   ),
                   filled: true,
                 ),
-                onChanged: (v) => setState(() => _query = v),
+                onChanged: _onQueryChanged,
               ),
             ),
             Expanded(
@@ -560,14 +610,29 @@ class _ContactPickerSheetState extends ConsumerState<ContactPickerSheet> {
                         }),
                       ),
                   ],
-                  if (filteredGuests.isEmpty && filteredUsers.isEmpty)
+                  // Hint that app users are found by typing, once a search
+                  // returned nothing (and we're not mid-request).
+                  if (_query.trim().length >= 2 &&
+                      !_searching &&
+                      filteredUsers.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(4, 12, 4, 0),
+                      child: Text(
+                        'No registered user matches "$_query". Check the email, '
+                        'or tap "Add guest" to track them as a guest.',
+                        style: TextStyle(
+                            fontSize: 12.5,
+                            color: theme.colorScheme.onSurface.withOpacity(0.55)),
+                      ),
+                    ),
+                  if (filteredGuests.isEmpty && filteredUsers.isEmpty && !_searching)
                     Padding(
                       padding: const EdgeInsets.only(top: 40),
                       child: Center(
                         child: Text(
                           _query.isEmpty
-                              ? 'No contacts yet.\nTap "Add guest" to add one.'
-                              : 'No results for "$_query"',
+                              ? 'Add a guest, or search a registered user by email.'
+                              : '',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                               color: theme.colorScheme.onSurface.withOpacity(0.5)),

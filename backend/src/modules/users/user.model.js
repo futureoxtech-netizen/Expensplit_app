@@ -1,4 +1,10 @@
 import mongoose from 'mongoose';
+import { paymentMethodFields, paymentToJson } from '../../utils/paymentFields.js';
+
+// A reusable payment method the user saves on their profile (bank account,
+// EasyPaisa/JazzCash wallet, PayPal, etc.). They can later "import" any of
+// these into a group so other members know how to pay them back.
+const paymentMethodSchema = new mongoose.Schema(paymentMethodFields(), { timestamps: true });
 
 const userSchema = new mongoose.Schema(
   {
@@ -23,6 +29,8 @@ const userSchema = new mongoose.Schema(
     //   'anyone'   — any member can add them straight in (default; legacy behaviour)
     //   'approval' — adding them creates a pending invite they must accept first
     groupInvitePolicy: { type: String, enum: ['anyone', 'approval'], default: 'anyone' },
+    // Saved payment methods, surfaced on the Profile → Payment information screen.
+    paymentMethods: { type: [paymentMethodSchema], default: [] },
     refreshTokens: { type: [String], default: [], select: false },
     fcmTokens: { type: [String], default: [] },
     // OneSignal subscription / player IDs registered by every device this
@@ -54,6 +62,7 @@ userSchema.method('toPublic', function toPublic() {
     locale: this.locale,
     bio: this.bio,
     groupInvitePolicy: this.groupInvitePolicy ?? 'anyone',
+    paymentMethods: (this.paymentMethods ?? []).map(paymentToJson),
     referralCode: this.referralCode,
     isEmailVerified: this.isEmailVerified,
     notificationPrefs: this.notificationPrefs ?? {

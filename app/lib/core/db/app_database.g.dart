@@ -5543,6 +5543,12 @@ class $GuestContactsTable extends GuestContacts
   late final GeneratedColumn<String> id = GeneratedColumn<String>(
       'id', aliasedName, false,
       type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _serverIdMeta =
+      const VerificationMeta('serverId');
+  @override
+  late final GeneratedColumn<String> serverId = GeneratedColumn<String>(
+      'server_id', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   static const VerificationMeta _nameMeta = const VerificationMeta('name');
   @override
   late final GeneratedColumn<String> name = GeneratedColumn<String>(
@@ -5574,9 +5580,33 @@ class $GuestContactsTable extends GuestContacts
   late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
       'created_at', aliasedName, true,
       type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  static const VerificationMeta _dirtyMeta = const VerificationMeta('dirty');
   @override
-  List<GeneratedColumn> get $columns =>
-      [id, name, phone, email, avatarColor, createdAt];
+  late final GeneratedColumn<bool> dirty = GeneratedColumn<bool>(
+      'dirty', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("dirty" IN (0, 1))'),
+      defaultValue: const Constant(false));
+  static const VerificationMeta _deletedAtMeta =
+      const VerificationMeta('deletedAt');
+  @override
+  late final GeneratedColumn<DateTime> deletedAt = GeneratedColumn<DateTime>(
+      'deleted_at', aliasedName, true,
+      type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        serverId,
+        name,
+        phone,
+        email,
+        avatarColor,
+        createdAt,
+        dirty,
+        deletedAt
+      ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -5591,6 +5621,10 @@ class $GuestContactsTable extends GuestContacts
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     } else if (isInserting) {
       context.missing(_idMeta);
+    }
+    if (data.containsKey('server_id')) {
+      context.handle(_serverIdMeta,
+          serverId.isAcceptableOrUnknown(data['server_id']!, _serverIdMeta));
     }
     if (data.containsKey('name')) {
       context.handle(
@@ -5611,10 +5645,16 @@ class $GuestContactsTable extends GuestContacts
               data['avatar_color']!, _avatarColorMeta));
     }
     if (data.containsKey('created_at')) {
+      context.handle(_createdAtMeta,
+          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+    }
+    if (data.containsKey('dirty')) {
       context.handle(
-          _createdAtMeta,
-          createdAt.isAcceptableOrUnknown(
-              data['created_at']!, _createdAtMeta));
+          _dirtyMeta, dirty.isAcceptableOrUnknown(data['dirty']!, _dirtyMeta));
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(_deletedAtMeta,
+          deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta));
     }
     return context;
   }
@@ -5627,6 +5667,8 @@ class $GuestContactsTable extends GuestContacts
     return GuestContact(
       id: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
+      serverId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}server_id']),
       name: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}name'])!,
       phone: attachedDatabase.typeMapping
@@ -5637,6 +5679,10 @@ class $GuestContactsTable extends GuestContacts
           .read(DriftSqlType.string, data['${effectivePrefix}avatar_color'])!,
       createdAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at']),
+      dirty: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}dirty'])!,
+      deletedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}deleted_at']),
     );
   }
 
@@ -5648,22 +5694,31 @@ class $GuestContactsTable extends GuestContacts
 
 class GuestContact extends DataClass implements Insertable<GuestContact> {
   final String id;
+  final String? serverId;
   final String name;
   final String? phone;
   final String? email;
   final String avatarColor;
   final DateTime? createdAt;
+  final bool dirty;
+  final DateTime? deletedAt;
   const GuestContact(
       {required this.id,
+      this.serverId,
       required this.name,
       this.phone,
       this.email,
       required this.avatarColor,
-      this.createdAt});
+      this.createdAt,
+      required this.dirty,
+      this.deletedAt});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<String>(id);
+    if (!nullToAbsent || serverId != null) {
+      map['server_id'] = Variable<String>(serverId);
+    }
     map['name'] = Variable<String>(name);
     if (!nullToAbsent || phone != null) {
       map['phone'] = Variable<String>(phone);
@@ -5675,12 +5730,19 @@ class GuestContact extends DataClass implements Insertable<GuestContact> {
     if (!nullToAbsent || createdAt != null) {
       map['created_at'] = Variable<DateTime>(createdAt);
     }
+    map['dirty'] = Variable<bool>(dirty);
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt);
+    }
     return map;
   }
 
   GuestContactsCompanion toCompanion(bool nullToAbsent) {
     return GuestContactsCompanion(
       id: Value(id),
+      serverId: serverId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverId),
       name: Value(name),
       phone:
           phone == null && nullToAbsent ? const Value.absent() : Value(phone),
@@ -5690,6 +5752,10 @@ class GuestContact extends DataClass implements Insertable<GuestContact> {
       createdAt: createdAt == null && nullToAbsent
           ? const Value.absent()
           : Value(createdAt),
+      dirty: Value(dirty),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
     );
   }
 
@@ -5698,11 +5764,14 @@ class GuestContact extends DataClass implements Insertable<GuestContact> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return GuestContact(
       id: serializer.fromJson<String>(json['id']),
+      serverId: serializer.fromJson<String?>(json['serverId']),
       name: serializer.fromJson<String>(json['name']),
       phone: serializer.fromJson<String?>(json['phone']),
       email: serializer.fromJson<String?>(json['email']),
       avatarColor: serializer.fromJson<String>(json['avatarColor']),
       createdAt: serializer.fromJson<DateTime?>(json['createdAt']),
+      dirty: serializer.fromJson<bool>(json['dirty']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
     );
   }
   @override
@@ -5710,39 +5779,50 @@ class GuestContact extends DataClass implements Insertable<GuestContact> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<String>(id),
+      'serverId': serializer.toJson<String?>(serverId),
       'name': serializer.toJson<String>(name),
       'phone': serializer.toJson<String?>(phone),
       'email': serializer.toJson<String?>(email),
       'avatarColor': serializer.toJson<String>(avatarColor),
       'createdAt': serializer.toJson<DateTime?>(createdAt),
+      'dirty': serializer.toJson<bool>(dirty),
+      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
     };
   }
 
   GuestContact copyWith(
           {String? id,
+          Value<String?> serverId = const Value.absent(),
           String? name,
           Value<String?> phone = const Value.absent(),
           Value<String?> email = const Value.absent(),
           String? avatarColor,
-          Value<DateTime?> createdAt = const Value.absent()}) =>
+          Value<DateTime?> createdAt = const Value.absent(),
+          bool? dirty,
+          Value<DateTime?> deletedAt = const Value.absent()}) =>
       GuestContact(
         id: id ?? this.id,
+        serverId: serverId.present ? serverId.value : this.serverId,
         name: name ?? this.name,
         phone: phone.present ? phone.value : this.phone,
         email: email.present ? email.value : this.email,
         avatarColor: avatarColor ?? this.avatarColor,
         createdAt: createdAt.present ? createdAt.value : this.createdAt,
+        dirty: dirty ?? this.dirty,
+        deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
       );
   GuestContact copyWithCompanion(GuestContactsCompanion data) {
     return GuestContact(
       id: data.id.present ? data.id.value : this.id,
+      serverId: data.serverId.present ? data.serverId.value : this.serverId,
       name: data.name.present ? data.name.value : this.name,
       phone: data.phone.present ? data.phone.value : this.phone,
       email: data.email.present ? data.email.value : this.email,
       avatarColor:
           data.avatarColor.present ? data.avatarColor.value : this.avatarColor,
-      createdAt:
-          data.createdAt.present ? data.createdAt.value : this.createdAt,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      dirty: data.dirty.present ? data.dirty.value : this.dirty,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
     );
   }
 
@@ -5750,91 +5830,118 @@ class GuestContact extends DataClass implements Insertable<GuestContact> {
   String toString() {
     return (StringBuffer('GuestContact(')
           ..write('id: $id, ')
+          ..write('serverId: $serverId, ')
           ..write('name: $name, ')
           ..write('phone: $phone, ')
           ..write('email: $email, ')
           ..write('avatarColor: $avatarColor, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('dirty: $dirty, ')
+          ..write('deletedAt: $deletedAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, name, phone, email, avatarColor, createdAt);
+  int get hashCode => Object.hash(id, serverId, name, phone, email, avatarColor,
+      createdAt, dirty, deletedAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is GuestContact &&
           other.id == this.id &&
+          other.serverId == this.serverId &&
           other.name == this.name &&
           other.phone == this.phone &&
           other.email == this.email &&
           other.avatarColor == this.avatarColor &&
-          other.createdAt == this.createdAt);
+          other.createdAt == this.createdAt &&
+          other.dirty == this.dirty &&
+          other.deletedAt == this.deletedAt);
 }
 
 class GuestContactsCompanion extends UpdateCompanion<GuestContact> {
   final Value<String> id;
+  final Value<String?> serverId;
   final Value<String> name;
   final Value<String?> phone;
   final Value<String?> email;
   final Value<String> avatarColor;
   final Value<DateTime?> createdAt;
+  final Value<bool> dirty;
+  final Value<DateTime?> deletedAt;
   final Value<int> rowid;
   const GuestContactsCompanion({
     this.id = const Value.absent(),
+    this.serverId = const Value.absent(),
     this.name = const Value.absent(),
     this.phone = const Value.absent(),
     this.email = const Value.absent(),
     this.avatarColor = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.dirty = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   GuestContactsCompanion.insert({
     required String id,
+    this.serverId = const Value.absent(),
     this.name = const Value.absent(),
     this.phone = const Value.absent(),
     this.email = const Value.absent(),
     this.avatarColor = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.dirty = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id);
   static Insertable<GuestContact> custom({
     Expression<String>? id,
+    Expression<String>? serverId,
     Expression<String>? name,
     Expression<String>? phone,
     Expression<String>? email,
     Expression<String>? avatarColor,
     Expression<DateTime>? createdAt,
+    Expression<bool>? dirty,
+    Expression<DateTime>? deletedAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
+      if (serverId != null) 'server_id': serverId,
       if (name != null) 'name': name,
       if (phone != null) 'phone': phone,
       if (email != null) 'email': email,
       if (avatarColor != null) 'avatar_color': avatarColor,
       if (createdAt != null) 'created_at': createdAt,
+      if (dirty != null) 'dirty': dirty,
+      if (deletedAt != null) 'deleted_at': deletedAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
 
   GuestContactsCompanion copyWith(
       {Value<String>? id,
+      Value<String?>? serverId,
       Value<String>? name,
       Value<String?>? phone,
       Value<String?>? email,
       Value<String>? avatarColor,
       Value<DateTime?>? createdAt,
+      Value<bool>? dirty,
+      Value<DateTime?>? deletedAt,
       Value<int>? rowid}) {
     return GuestContactsCompanion(
       id: id ?? this.id,
+      serverId: serverId ?? this.serverId,
       name: name ?? this.name,
       phone: phone ?? this.phone,
       email: email ?? this.email,
       avatarColor: avatarColor ?? this.avatarColor,
       createdAt: createdAt ?? this.createdAt,
+      dirty: dirty ?? this.dirty,
+      deletedAt: deletedAt ?? this.deletedAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -5844,6 +5951,9 @@ class GuestContactsCompanion extends UpdateCompanion<GuestContact> {
     final map = <String, Expression>{};
     if (id.present) {
       map['id'] = Variable<String>(id.value);
+    }
+    if (serverId.present) {
+      map['server_id'] = Variable<String>(serverId.value);
     }
     if (name.present) {
       map['name'] = Variable<String>(name.value);
@@ -5860,6 +5970,12 @@ class GuestContactsCompanion extends UpdateCompanion<GuestContact> {
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
+    if (dirty.present) {
+      map['dirty'] = Variable<bool>(dirty.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -5870,11 +5986,14 @@ class GuestContactsCompanion extends UpdateCompanion<GuestContact> {
   String toString() {
     return (StringBuffer('GuestContactsCompanion(')
           ..write('id: $id, ')
+          ..write('serverId: $serverId, ')
           ..write('name: $name, ')
           ..write('phone: $phone, ')
           ..write('email: $email, ')
           ..write('avatarColor: $avatarColor, ')
           ..write('createdAt: $createdAt, ')
+          ..write('dirty: $dirty, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -6030,7 +6149,7 @@ class $LoansTable extends Loans with TableInfo<$LoansTable, Loan> {
         createdAt,
         updatedAt,
         deletedAt,
-        dirty,
+        dirty
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -6114,22 +6233,16 @@ class $LoansTable extends Loans with TableInfo<$LoansTable, Loan> {
           status.isAcceptableOrUnknown(data['status']!, _statusMeta));
     }
     if (data.containsKey('created_at')) {
-      context.handle(
-          _createdAtMeta,
-          createdAt.isAcceptableOrUnknown(
-              data['created_at']!, _createdAtMeta));
+      context.handle(_createdAtMeta,
+          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
     }
     if (data.containsKey('updated_at')) {
-      context.handle(
-          _updatedAtMeta,
-          updatedAt.isAcceptableOrUnknown(
-              data['updated_at']!, _updatedAtMeta));
+      context.handle(_updatedAtMeta,
+          updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta));
     }
     if (data.containsKey('deleted_at')) {
-      context.handle(
-          _deletedAtMeta,
-          deletedAt.isAcceptableOrUnknown(
-              data['deleted_at']!, _deletedAtMeta));
+      context.handle(_deletedAtMeta,
+          deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta));
     }
     if (data.containsKey('dirty')) {
       context.handle(
@@ -6148,14 +6261,14 @@ class $LoansTable extends Loans with TableInfo<$LoansTable, Loan> {
           .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
       serverId: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}server_id']),
-      counterpartyId: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}counterparty_id'])!,
-      counterpartyType: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}counterparty_type'])!,
-      counterpartyName: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}counterparty_name'])!,
-      counterpartyAvatar: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}counterparty_avatar']),
+      counterpartyId: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}counterparty_id'])!,
+      counterpartyType: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}counterparty_type'])!,
+      counterpartyName: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}counterparty_name'])!,
+      counterpartyAvatar: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}counterparty_avatar']),
       loanType: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}loan_type'])!,
       amount: attachedDatabase.typeMapping
@@ -6448,26 +6561,25 @@ class Loan extends DataClass implements Insertable<Loan> {
   }
 
   @override
-  int get hashCode => Object.hashAll([
-        id,
-        serverId,
-        counterpartyId,
-        counterpartyType,
-        counterpartyName,
-        counterpartyAvatar,
-        loanType,
-        amount,
-        paidAmount,
-        currency,
-        description,
-        notes,
-        dueDate,
-        status,
-        createdAt,
-        updatedAt,
-        deletedAt,
-        dirty,
-      ]);
+  int get hashCode => Object.hash(
+      id,
+      serverId,
+      counterpartyId,
+      counterpartyType,
+      counterpartyName,
+      counterpartyAvatar,
+      loanType,
+      amount,
+      paidAmount,
+      currency,
+      description,
+      notes,
+      dueDate,
+      status,
+      createdAt,
+      updatedAt,
+      deletedAt,
+      dirty);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -6802,8 +6914,18 @@ class $LoanPaymentsTable extends LoanPayments
           GeneratedColumn.constraintIsAlways('CHECK ("dirty" IN (0, 1))'),
       defaultValue: const Constant(false));
   @override
-  List<GeneratedColumn> get $columns =>
-      [id, serverId, loanId, amount, note, method, paidAt, createdAt, deletedAt, dirty];
+  List<GeneratedColumn> get $columns => [
+        id,
+        serverId,
+        loanId,
+        amount,
+        note,
+        method,
+        paidAt,
+        createdAt,
+        deletedAt,
+        dirty
+      ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -6846,16 +6968,12 @@ class $LoanPaymentsTable extends LoanPayments
           paidAt.isAcceptableOrUnknown(data['paid_at']!, _paidAtMeta));
     }
     if (data.containsKey('created_at')) {
-      context.handle(
-          _createdAtMeta,
-          createdAt.isAcceptableOrUnknown(
-              data['created_at']!, _createdAtMeta));
+      context.handle(_createdAtMeta,
+          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
     }
     if (data.containsKey('deleted_at')) {
-      context.handle(
-          _deletedAtMeta,
-          deletedAt.isAcceptableOrUnknown(
-              data['deleted_at']!, _deletedAtMeta));
+      context.handle(_deletedAtMeta,
+          deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta));
     }
     if (data.containsKey('dirty')) {
       context.handle(
@@ -7056,8 +7174,8 @@ class LoanPayment extends DataClass implements Insertable<LoanPayment> {
   }
 
   @override
-  int get hashCode => Object.hash(
-      id, serverId, loanId, amount, note, method, paidAt, createdAt, deletedAt, dirty);
+  int get hashCode => Object.hash(id, serverId, loanId, amount, note, method,
+      paidAt, createdAt, deletedAt, dirty);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -10588,6 +10706,854 @@ typedef $$ReactionsTableProcessedTableManager = ProcessedTableManager<
     (Reaction, BaseReferences<_$AppDatabase, $ReactionsTable, Reaction>),
     Reaction,
     PrefetchHooks Function()>;
+typedef $$GuestContactsTableCreateCompanionBuilder = GuestContactsCompanion
+    Function({
+  required String id,
+  Value<String?> serverId,
+  Value<String> name,
+  Value<String?> phone,
+  Value<String?> email,
+  Value<String> avatarColor,
+  Value<DateTime?> createdAt,
+  Value<bool> dirty,
+  Value<DateTime?> deletedAt,
+  Value<int> rowid,
+});
+typedef $$GuestContactsTableUpdateCompanionBuilder = GuestContactsCompanion
+    Function({
+  Value<String> id,
+  Value<String?> serverId,
+  Value<String> name,
+  Value<String?> phone,
+  Value<String?> email,
+  Value<String> avatarColor,
+  Value<DateTime?> createdAt,
+  Value<bool> dirty,
+  Value<DateTime?> deletedAt,
+  Value<int> rowid,
+});
+
+class $$GuestContactsTableFilterComposer
+    extends Composer<_$AppDatabase, $GuestContactsTable> {
+  $$GuestContactsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get serverId => $composableBuilder(
+      column: $table.serverId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get phone => $composableBuilder(
+      column: $table.phone, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get email => $composableBuilder(
+      column: $table.email, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get avatarColor => $composableBuilder(
+      column: $table.avatarColor, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get dirty => $composableBuilder(
+      column: $table.dirty, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get deletedAt => $composableBuilder(
+      column: $table.deletedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$GuestContactsTableOrderingComposer
+    extends Composer<_$AppDatabase, $GuestContactsTable> {
+  $$GuestContactsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get serverId => $composableBuilder(
+      column: $table.serverId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get phone => $composableBuilder(
+      column: $table.phone, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get email => $composableBuilder(
+      column: $table.email, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get avatarColor => $composableBuilder(
+      column: $table.avatarColor, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get dirty => $composableBuilder(
+      column: $table.dirty, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+      column: $table.deletedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$GuestContactsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $GuestContactsTable> {
+  $$GuestContactsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get serverId =>
+      $composableBuilder(column: $table.serverId, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get phone =>
+      $composableBuilder(column: $table.phone, builder: (column) => column);
+
+  GeneratedColumn<String> get email =>
+      $composableBuilder(column: $table.email, builder: (column) => column);
+
+  GeneratedColumn<String> get avatarColor => $composableBuilder(
+      column: $table.avatarColor, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get dirty =>
+      $composableBuilder(column: $table.dirty, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+}
+
+class $$GuestContactsTableTableManager extends RootTableManager<
+    _$AppDatabase,
+    $GuestContactsTable,
+    GuestContact,
+    $$GuestContactsTableFilterComposer,
+    $$GuestContactsTableOrderingComposer,
+    $$GuestContactsTableAnnotationComposer,
+    $$GuestContactsTableCreateCompanionBuilder,
+    $$GuestContactsTableUpdateCompanionBuilder,
+    (
+      GuestContact,
+      BaseReferences<_$AppDatabase, $GuestContactsTable, GuestContact>
+    ),
+    GuestContact,
+    PrefetchHooks Function()> {
+  $$GuestContactsTableTableManager(_$AppDatabase db, $GuestContactsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$GuestContactsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$GuestContactsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$GuestContactsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> id = const Value.absent(),
+            Value<String?> serverId = const Value.absent(),
+            Value<String> name = const Value.absent(),
+            Value<String?> phone = const Value.absent(),
+            Value<String?> email = const Value.absent(),
+            Value<String> avatarColor = const Value.absent(),
+            Value<DateTime?> createdAt = const Value.absent(),
+            Value<bool> dirty = const Value.absent(),
+            Value<DateTime?> deletedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              GuestContactsCompanion(
+            id: id,
+            serverId: serverId,
+            name: name,
+            phone: phone,
+            email: email,
+            avatarColor: avatarColor,
+            createdAt: createdAt,
+            dirty: dirty,
+            deletedAt: deletedAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String id,
+            Value<String?> serverId = const Value.absent(),
+            Value<String> name = const Value.absent(),
+            Value<String?> phone = const Value.absent(),
+            Value<String?> email = const Value.absent(),
+            Value<String> avatarColor = const Value.absent(),
+            Value<DateTime?> createdAt = const Value.absent(),
+            Value<bool> dirty = const Value.absent(),
+            Value<DateTime?> deletedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              GuestContactsCompanion.insert(
+            id: id,
+            serverId: serverId,
+            name: name,
+            phone: phone,
+            email: email,
+            avatarColor: avatarColor,
+            createdAt: createdAt,
+            dirty: dirty,
+            deletedAt: deletedAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$GuestContactsTableProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    $GuestContactsTable,
+    GuestContact,
+    $$GuestContactsTableFilterComposer,
+    $$GuestContactsTableOrderingComposer,
+    $$GuestContactsTableAnnotationComposer,
+    $$GuestContactsTableCreateCompanionBuilder,
+    $$GuestContactsTableUpdateCompanionBuilder,
+    (
+      GuestContact,
+      BaseReferences<_$AppDatabase, $GuestContactsTable, GuestContact>
+    ),
+    GuestContact,
+    PrefetchHooks Function()>;
+typedef $$LoansTableCreateCompanionBuilder = LoansCompanion Function({
+  required String id,
+  Value<String?> serverId,
+  required String counterpartyId,
+  Value<String> counterpartyType,
+  Value<String> counterpartyName,
+  Value<String?> counterpartyAvatar,
+  Value<String> loanType,
+  Value<double> amount,
+  Value<double> paidAmount,
+  Value<String> currency,
+  Value<String> description,
+  Value<String> notes,
+  Value<DateTime?> dueDate,
+  Value<String> status,
+  Value<DateTime?> createdAt,
+  Value<DateTime?> updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<bool> dirty,
+  Value<int> rowid,
+});
+typedef $$LoansTableUpdateCompanionBuilder = LoansCompanion Function({
+  Value<String> id,
+  Value<String?> serverId,
+  Value<String> counterpartyId,
+  Value<String> counterpartyType,
+  Value<String> counterpartyName,
+  Value<String?> counterpartyAvatar,
+  Value<String> loanType,
+  Value<double> amount,
+  Value<double> paidAmount,
+  Value<String> currency,
+  Value<String> description,
+  Value<String> notes,
+  Value<DateTime?> dueDate,
+  Value<String> status,
+  Value<DateTime?> createdAt,
+  Value<DateTime?> updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<bool> dirty,
+  Value<int> rowid,
+});
+
+class $$LoansTableFilterComposer extends Composer<_$AppDatabase, $LoansTable> {
+  $$LoansTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get serverId => $composableBuilder(
+      column: $table.serverId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get counterpartyId => $composableBuilder(
+      column: $table.counterpartyId,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get counterpartyType => $composableBuilder(
+      column: $table.counterpartyType,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get counterpartyName => $composableBuilder(
+      column: $table.counterpartyName,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get counterpartyAvatar => $composableBuilder(
+      column: $table.counterpartyAvatar,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get loanType => $composableBuilder(
+      column: $table.loanType, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get amount => $composableBuilder(
+      column: $table.amount, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get paidAmount => $composableBuilder(
+      column: $table.paidAmount, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get currency => $composableBuilder(
+      column: $table.currency, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get description => $composableBuilder(
+      column: $table.description, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get notes => $composableBuilder(
+      column: $table.notes, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get dueDate => $composableBuilder(
+      column: $table.dueDate, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get status => $composableBuilder(
+      column: $table.status, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get deletedAt => $composableBuilder(
+      column: $table.deletedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get dirty => $composableBuilder(
+      column: $table.dirty, builder: (column) => ColumnFilters(column));
+}
+
+class $$LoansTableOrderingComposer
+    extends Composer<_$AppDatabase, $LoansTable> {
+  $$LoansTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get serverId => $composableBuilder(
+      column: $table.serverId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get counterpartyId => $composableBuilder(
+      column: $table.counterpartyId,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get counterpartyType => $composableBuilder(
+      column: $table.counterpartyType,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get counterpartyName => $composableBuilder(
+      column: $table.counterpartyName,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get counterpartyAvatar => $composableBuilder(
+      column: $table.counterpartyAvatar,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get loanType => $composableBuilder(
+      column: $table.loanType, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get amount => $composableBuilder(
+      column: $table.amount, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get paidAmount => $composableBuilder(
+      column: $table.paidAmount, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get currency => $composableBuilder(
+      column: $table.currency, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get description => $composableBuilder(
+      column: $table.description, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get notes => $composableBuilder(
+      column: $table.notes, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get dueDate => $composableBuilder(
+      column: $table.dueDate, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get status => $composableBuilder(
+      column: $table.status, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+      column: $table.deletedAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get dirty => $composableBuilder(
+      column: $table.dirty, builder: (column) => ColumnOrderings(column));
+}
+
+class $$LoansTableAnnotationComposer
+    extends Composer<_$AppDatabase, $LoansTable> {
+  $$LoansTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get serverId =>
+      $composableBuilder(column: $table.serverId, builder: (column) => column);
+
+  GeneratedColumn<String> get counterpartyId => $composableBuilder(
+      column: $table.counterpartyId, builder: (column) => column);
+
+  GeneratedColumn<String> get counterpartyType => $composableBuilder(
+      column: $table.counterpartyType, builder: (column) => column);
+
+  GeneratedColumn<String> get counterpartyName => $composableBuilder(
+      column: $table.counterpartyName, builder: (column) => column);
+
+  GeneratedColumn<String> get counterpartyAvatar => $composableBuilder(
+      column: $table.counterpartyAvatar, builder: (column) => column);
+
+  GeneratedColumn<String> get loanType =>
+      $composableBuilder(column: $table.loanType, builder: (column) => column);
+
+  GeneratedColumn<double> get amount =>
+      $composableBuilder(column: $table.amount, builder: (column) => column);
+
+  GeneratedColumn<double> get paidAmount => $composableBuilder(
+      column: $table.paidAmount, builder: (column) => column);
+
+  GeneratedColumn<String> get currency =>
+      $composableBuilder(column: $table.currency, builder: (column) => column);
+
+  GeneratedColumn<String> get description => $composableBuilder(
+      column: $table.description, builder: (column) => column);
+
+  GeneratedColumn<String> get notes =>
+      $composableBuilder(column: $table.notes, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get dueDate =>
+      $composableBuilder(column: $table.dueDate, builder: (column) => column);
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get dirty =>
+      $composableBuilder(column: $table.dirty, builder: (column) => column);
+}
+
+class $$LoansTableTableManager extends RootTableManager<
+    _$AppDatabase,
+    $LoansTable,
+    Loan,
+    $$LoansTableFilterComposer,
+    $$LoansTableOrderingComposer,
+    $$LoansTableAnnotationComposer,
+    $$LoansTableCreateCompanionBuilder,
+    $$LoansTableUpdateCompanionBuilder,
+    (Loan, BaseReferences<_$AppDatabase, $LoansTable, Loan>),
+    Loan,
+    PrefetchHooks Function()> {
+  $$LoansTableTableManager(_$AppDatabase db, $LoansTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LoansTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LoansTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$LoansTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> id = const Value.absent(),
+            Value<String?> serverId = const Value.absent(),
+            Value<String> counterpartyId = const Value.absent(),
+            Value<String> counterpartyType = const Value.absent(),
+            Value<String> counterpartyName = const Value.absent(),
+            Value<String?> counterpartyAvatar = const Value.absent(),
+            Value<String> loanType = const Value.absent(),
+            Value<double> amount = const Value.absent(),
+            Value<double> paidAmount = const Value.absent(),
+            Value<String> currency = const Value.absent(),
+            Value<String> description = const Value.absent(),
+            Value<String> notes = const Value.absent(),
+            Value<DateTime?> dueDate = const Value.absent(),
+            Value<String> status = const Value.absent(),
+            Value<DateTime?> createdAt = const Value.absent(),
+            Value<DateTime?> updatedAt = const Value.absent(),
+            Value<DateTime?> deletedAt = const Value.absent(),
+            Value<bool> dirty = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              LoansCompanion(
+            id: id,
+            serverId: serverId,
+            counterpartyId: counterpartyId,
+            counterpartyType: counterpartyType,
+            counterpartyName: counterpartyName,
+            counterpartyAvatar: counterpartyAvatar,
+            loanType: loanType,
+            amount: amount,
+            paidAmount: paidAmount,
+            currency: currency,
+            description: description,
+            notes: notes,
+            dueDate: dueDate,
+            status: status,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            deletedAt: deletedAt,
+            dirty: dirty,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String id,
+            Value<String?> serverId = const Value.absent(),
+            required String counterpartyId,
+            Value<String> counterpartyType = const Value.absent(),
+            Value<String> counterpartyName = const Value.absent(),
+            Value<String?> counterpartyAvatar = const Value.absent(),
+            Value<String> loanType = const Value.absent(),
+            Value<double> amount = const Value.absent(),
+            Value<double> paidAmount = const Value.absent(),
+            Value<String> currency = const Value.absent(),
+            Value<String> description = const Value.absent(),
+            Value<String> notes = const Value.absent(),
+            Value<DateTime?> dueDate = const Value.absent(),
+            Value<String> status = const Value.absent(),
+            Value<DateTime?> createdAt = const Value.absent(),
+            Value<DateTime?> updatedAt = const Value.absent(),
+            Value<DateTime?> deletedAt = const Value.absent(),
+            Value<bool> dirty = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              LoansCompanion.insert(
+            id: id,
+            serverId: serverId,
+            counterpartyId: counterpartyId,
+            counterpartyType: counterpartyType,
+            counterpartyName: counterpartyName,
+            counterpartyAvatar: counterpartyAvatar,
+            loanType: loanType,
+            amount: amount,
+            paidAmount: paidAmount,
+            currency: currency,
+            description: description,
+            notes: notes,
+            dueDate: dueDate,
+            status: status,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            deletedAt: deletedAt,
+            dirty: dirty,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$LoansTableProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    $LoansTable,
+    Loan,
+    $$LoansTableFilterComposer,
+    $$LoansTableOrderingComposer,
+    $$LoansTableAnnotationComposer,
+    $$LoansTableCreateCompanionBuilder,
+    $$LoansTableUpdateCompanionBuilder,
+    (Loan, BaseReferences<_$AppDatabase, $LoansTable, Loan>),
+    Loan,
+    PrefetchHooks Function()>;
+typedef $$LoanPaymentsTableCreateCompanionBuilder = LoanPaymentsCompanion
+    Function({
+  required String id,
+  Value<String?> serverId,
+  required String loanId,
+  Value<double> amount,
+  Value<String> note,
+  Value<String> method,
+  Value<DateTime?> paidAt,
+  Value<DateTime?> createdAt,
+  Value<DateTime?> deletedAt,
+  Value<bool> dirty,
+  Value<int> rowid,
+});
+typedef $$LoanPaymentsTableUpdateCompanionBuilder = LoanPaymentsCompanion
+    Function({
+  Value<String> id,
+  Value<String?> serverId,
+  Value<String> loanId,
+  Value<double> amount,
+  Value<String> note,
+  Value<String> method,
+  Value<DateTime?> paidAt,
+  Value<DateTime?> createdAt,
+  Value<DateTime?> deletedAt,
+  Value<bool> dirty,
+  Value<int> rowid,
+});
+
+class $$LoanPaymentsTableFilterComposer
+    extends Composer<_$AppDatabase, $LoanPaymentsTable> {
+  $$LoanPaymentsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get serverId => $composableBuilder(
+      column: $table.serverId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get loanId => $composableBuilder(
+      column: $table.loanId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get amount => $composableBuilder(
+      column: $table.amount, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get note => $composableBuilder(
+      column: $table.note, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get method => $composableBuilder(
+      column: $table.method, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get paidAt => $composableBuilder(
+      column: $table.paidAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get deletedAt => $composableBuilder(
+      column: $table.deletedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get dirty => $composableBuilder(
+      column: $table.dirty, builder: (column) => ColumnFilters(column));
+}
+
+class $$LoanPaymentsTableOrderingComposer
+    extends Composer<_$AppDatabase, $LoanPaymentsTable> {
+  $$LoanPaymentsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get serverId => $composableBuilder(
+      column: $table.serverId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get loanId => $composableBuilder(
+      column: $table.loanId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get amount => $composableBuilder(
+      column: $table.amount, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get note => $composableBuilder(
+      column: $table.note, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get method => $composableBuilder(
+      column: $table.method, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get paidAt => $composableBuilder(
+      column: $table.paidAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+      column: $table.deletedAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get dirty => $composableBuilder(
+      column: $table.dirty, builder: (column) => ColumnOrderings(column));
+}
+
+class $$LoanPaymentsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $LoanPaymentsTable> {
+  $$LoanPaymentsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get serverId =>
+      $composableBuilder(column: $table.serverId, builder: (column) => column);
+
+  GeneratedColumn<String> get loanId =>
+      $composableBuilder(column: $table.loanId, builder: (column) => column);
+
+  GeneratedColumn<double> get amount =>
+      $composableBuilder(column: $table.amount, builder: (column) => column);
+
+  GeneratedColumn<String> get note =>
+      $composableBuilder(column: $table.note, builder: (column) => column);
+
+  GeneratedColumn<String> get method =>
+      $composableBuilder(column: $table.method, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get paidAt =>
+      $composableBuilder(column: $table.paidAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get dirty =>
+      $composableBuilder(column: $table.dirty, builder: (column) => column);
+}
+
+class $$LoanPaymentsTableTableManager extends RootTableManager<
+    _$AppDatabase,
+    $LoanPaymentsTable,
+    LoanPayment,
+    $$LoanPaymentsTableFilterComposer,
+    $$LoanPaymentsTableOrderingComposer,
+    $$LoanPaymentsTableAnnotationComposer,
+    $$LoanPaymentsTableCreateCompanionBuilder,
+    $$LoanPaymentsTableUpdateCompanionBuilder,
+    (
+      LoanPayment,
+      BaseReferences<_$AppDatabase, $LoanPaymentsTable, LoanPayment>
+    ),
+    LoanPayment,
+    PrefetchHooks Function()> {
+  $$LoanPaymentsTableTableManager(_$AppDatabase db, $LoanPaymentsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LoanPaymentsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LoanPaymentsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$LoanPaymentsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> id = const Value.absent(),
+            Value<String?> serverId = const Value.absent(),
+            Value<String> loanId = const Value.absent(),
+            Value<double> amount = const Value.absent(),
+            Value<String> note = const Value.absent(),
+            Value<String> method = const Value.absent(),
+            Value<DateTime?> paidAt = const Value.absent(),
+            Value<DateTime?> createdAt = const Value.absent(),
+            Value<DateTime?> deletedAt = const Value.absent(),
+            Value<bool> dirty = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              LoanPaymentsCompanion(
+            id: id,
+            serverId: serverId,
+            loanId: loanId,
+            amount: amount,
+            note: note,
+            method: method,
+            paidAt: paidAt,
+            createdAt: createdAt,
+            deletedAt: deletedAt,
+            dirty: dirty,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String id,
+            Value<String?> serverId = const Value.absent(),
+            required String loanId,
+            Value<double> amount = const Value.absent(),
+            Value<String> note = const Value.absent(),
+            Value<String> method = const Value.absent(),
+            Value<DateTime?> paidAt = const Value.absent(),
+            Value<DateTime?> createdAt = const Value.absent(),
+            Value<DateTime?> deletedAt = const Value.absent(),
+            Value<bool> dirty = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              LoanPaymentsCompanion.insert(
+            id: id,
+            serverId: serverId,
+            loanId: loanId,
+            amount: amount,
+            note: note,
+            method: method,
+            paidAt: paidAt,
+            createdAt: createdAt,
+            deletedAt: deletedAt,
+            dirty: dirty,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$LoanPaymentsTableProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    $LoanPaymentsTable,
+    LoanPayment,
+    $$LoanPaymentsTableFilterComposer,
+    $$LoanPaymentsTableOrderingComposer,
+    $$LoanPaymentsTableAnnotationComposer,
+    $$LoanPaymentsTableCreateCompanionBuilder,
+    $$LoanPaymentsTableUpdateCompanionBuilder,
+    (
+      LoanPayment,
+      BaseReferences<_$AppDatabase, $LoanPaymentsTable, LoanPayment>
+    ),
+    LoanPayment,
+    PrefetchHooks Function()>;
 typedef $$SyncQueueTableCreateCompanionBuilder = SyncQueueCompanion Function({
   required String opId,
   required String entityType,
@@ -10939,814 +11905,6 @@ typedef $$SyncMetaTableProcessedTableManager = ProcessedTableManager<
     $$SyncMetaTableUpdateCompanionBuilder,
     (SyncMetaData, BaseReferences<_$AppDatabase, $SyncMetaTable, SyncMetaData>),
     SyncMetaData,
-    PrefetchHooks Function()>;
-
-typedef $$GuestContactsTableCreateCompanionBuilder = GuestContactsCompanion
-    Function({
-  required String id,
-  Value<String> name,
-  Value<String?> phone,
-  Value<String?> email,
-  Value<String> avatarColor,
-  Value<DateTime?> createdAt,
-  Value<int> rowid,
-});
-typedef $$GuestContactsTableUpdateCompanionBuilder = GuestContactsCompanion
-    Function({
-  Value<String> id,
-  Value<String> name,
-  Value<String?> phone,
-  Value<String?> email,
-  Value<String> avatarColor,
-  Value<DateTime?> createdAt,
-  Value<int> rowid,
-});
-
-class $$GuestContactsTableFilterComposer
-    extends Composer<_$AppDatabase, $GuestContactsTable> {
-  $$GuestContactsTableFilterComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnFilters<String> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get name => $composableBuilder(
-      column: $table.name, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get phone => $composableBuilder(
-      column: $table.phone, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get email => $composableBuilder(
-      column: $table.email, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get avatarColor => $composableBuilder(
-      column: $table.avatarColor, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<DateTime> get createdAt => $composableBuilder(
-      column: $table.createdAt, builder: (column) => ColumnFilters(column));
-}
-
-class $$GuestContactsTableOrderingComposer
-    extends Composer<_$AppDatabase, $GuestContactsTable> {
-  $$GuestContactsTableOrderingComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnOrderings<String> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get name => $composableBuilder(
-      column: $table.name, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get phone => $composableBuilder(
-      column: $table.phone, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get email => $composableBuilder(
-      column: $table.email, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get avatarColor => $composableBuilder(
-      column: $table.avatarColor, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
-      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
-}
-
-class $$GuestContactsTableAnnotationComposer
-    extends Composer<_$AppDatabase, $GuestContactsTable> {
-  $$GuestContactsTableAnnotationComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  GeneratedColumn<String> get id =>
-      $composableBuilder(column: $table.id, builder: (column) => column);
-
-  GeneratedColumn<String> get name =>
-      $composableBuilder(column: $table.name, builder: (column) => column);
-
-  GeneratedColumn<String> get phone =>
-      $composableBuilder(column: $table.phone, builder: (column) => column);
-
-  GeneratedColumn<String> get email =>
-      $composableBuilder(column: $table.email, builder: (column) => column);
-
-  GeneratedColumn<String> get avatarColor => $composableBuilder(
-      column: $table.avatarColor, builder: (column) => column);
-
-  GeneratedColumn<DateTime> get createdAt =>
-      $composableBuilder(column: $table.createdAt, builder: (column) => column);
-}
-
-class $$GuestContactsTableTableManager extends RootTableManager<
-    _$AppDatabase,
-    $GuestContactsTable,
-    GuestContact,
-    $$GuestContactsTableFilterComposer,
-    $$GuestContactsTableOrderingComposer,
-    $$GuestContactsTableAnnotationComposer,
-    $$GuestContactsTableCreateCompanionBuilder,
-    $$GuestContactsTableUpdateCompanionBuilder,
-    (
-      GuestContact,
-      BaseReferences<_$AppDatabase, $GuestContactsTable, GuestContact>
-    ),
-    GuestContact,
-    PrefetchHooks Function()> {
-  $$GuestContactsTableTableManager(
-      _$AppDatabase db, $GuestContactsTable table)
-      : super(TableManagerState(
-          db: db,
-          table: table,
-          createFilteringComposer: () =>
-              $$GuestContactsTableFilterComposer($db: db, $table: table),
-          createOrderingComposer: () =>
-              $$GuestContactsTableOrderingComposer($db: db, $table: table),
-          createComputedFieldComposer: () =>
-              $$GuestContactsTableAnnotationComposer($db: db, $table: table),
-          updateCompanionCallback: ({
-            Value<String> id = const Value.absent(),
-            Value<String> name = const Value.absent(),
-            Value<String?> phone = const Value.absent(),
-            Value<String?> email = const Value.absent(),
-            Value<String> avatarColor = const Value.absent(),
-            Value<DateTime?> createdAt = const Value.absent(),
-            Value<int> rowid = const Value.absent(),
-          }) =>
-              GuestContactsCompanion(
-            id: id,
-            name: name,
-            phone: phone,
-            email: email,
-            avatarColor: avatarColor,
-            createdAt: createdAt,
-            rowid: rowid,
-          ),
-          createCompanionCallback: ({
-            required String id,
-            Value<String> name = const Value.absent(),
-            Value<String?> phone = const Value.absent(),
-            Value<String?> email = const Value.absent(),
-            Value<String> avatarColor = const Value.absent(),
-            Value<DateTime?> createdAt = const Value.absent(),
-            Value<int> rowid = const Value.absent(),
-          }) =>
-              GuestContactsCompanion.insert(
-            id: id,
-            name: name,
-            phone: phone,
-            email: email,
-            avatarColor: avatarColor,
-            createdAt: createdAt,
-            rowid: rowid,
-          ),
-          withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
-              .toList(),
-          prefetchHooksCallback: null,
-        ));
-}
-
-typedef $$GuestContactsTableProcessedTableManager = ProcessedTableManager<
-    _$AppDatabase,
-    $GuestContactsTable,
-    GuestContact,
-    $$GuestContactsTableFilterComposer,
-    $$GuestContactsTableOrderingComposer,
-    $$GuestContactsTableAnnotationComposer,
-    $$GuestContactsTableCreateCompanionBuilder,
-    $$GuestContactsTableUpdateCompanionBuilder,
-    (
-      GuestContact,
-      BaseReferences<_$AppDatabase, $GuestContactsTable, GuestContact>
-    ),
-    GuestContact,
-    PrefetchHooks Function()>;
-
-typedef $$LoansTableCreateCompanionBuilder = LoansCompanion Function({
-  required String id,
-  Value<String?> serverId,
-  required String counterpartyId,
-  Value<String> counterpartyType,
-  Value<String> counterpartyName,
-  Value<String?> counterpartyAvatar,
-  Value<String> loanType,
-  Value<double> amount,
-  Value<double> paidAmount,
-  Value<String> currency,
-  Value<String> description,
-  Value<String> notes,
-  Value<DateTime?> dueDate,
-  Value<String> status,
-  Value<DateTime?> createdAt,
-  Value<DateTime?> updatedAt,
-  Value<DateTime?> deletedAt,
-  Value<bool> dirty,
-  Value<int> rowid,
-});
-typedef $$LoansTableUpdateCompanionBuilder = LoansCompanion Function({
-  Value<String> id,
-  Value<String?> serverId,
-  Value<String> counterpartyId,
-  Value<String> counterpartyType,
-  Value<String> counterpartyName,
-  Value<String?> counterpartyAvatar,
-  Value<String> loanType,
-  Value<double> amount,
-  Value<double> paidAmount,
-  Value<String> currency,
-  Value<String> description,
-  Value<String> notes,
-  Value<DateTime?> dueDate,
-  Value<String> status,
-  Value<DateTime?> createdAt,
-  Value<DateTime?> updatedAt,
-  Value<DateTime?> deletedAt,
-  Value<bool> dirty,
-  Value<int> rowid,
-});
-
-class $$LoansTableFilterComposer
-    extends Composer<_$AppDatabase, $LoansTable> {
-  $$LoansTableFilterComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnFilters<String> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get serverId => $composableBuilder(
-      column: $table.serverId, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get counterpartyId => $composableBuilder(
-      column: $table.counterpartyId,
-      builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get counterpartyType => $composableBuilder(
-      column: $table.counterpartyType,
-      builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get counterpartyName => $composableBuilder(
-      column: $table.counterpartyName,
-      builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get counterpartyAvatar => $composableBuilder(
-      column: $table.counterpartyAvatar,
-      builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get loanType => $composableBuilder(
-      column: $table.loanType, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<double> get amount => $composableBuilder(
-      column: $table.amount, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<double> get paidAmount => $composableBuilder(
-      column: $table.paidAmount, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get currency => $composableBuilder(
-      column: $table.currency, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get description => $composableBuilder(
-      column: $table.description, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get notes => $composableBuilder(
-      column: $table.notes, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<DateTime> get dueDate => $composableBuilder(
-      column: $table.dueDate, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get status => $composableBuilder(
-      column: $table.status, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<DateTime> get createdAt => $composableBuilder(
-      column: $table.createdAt, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
-      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<DateTime> get deletedAt => $composableBuilder(
-      column: $table.deletedAt, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<bool> get dirty => $composableBuilder(
-      column: $table.dirty, builder: (column) => ColumnFilters(column));
-}
-
-class $$LoansTableOrderingComposer
-    extends Composer<_$AppDatabase, $LoansTable> {
-  $$LoansTableOrderingComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnOrderings<String> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get serverId => $composableBuilder(
-      column: $table.serverId, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get counterpartyId => $composableBuilder(
-      column: $table.counterpartyId,
-      builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get counterpartyType => $composableBuilder(
-      column: $table.counterpartyType,
-      builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get counterpartyName => $composableBuilder(
-      column: $table.counterpartyName,
-      builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get counterpartyAvatar => $composableBuilder(
-      column: $table.counterpartyAvatar,
-      builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get loanType => $composableBuilder(
-      column: $table.loanType, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<double> get amount => $composableBuilder(
-      column: $table.amount, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<double> get paidAmount => $composableBuilder(
-      column: $table.paidAmount, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get currency => $composableBuilder(
-      column: $table.currency, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get description => $composableBuilder(
-      column: $table.description, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get notes => $composableBuilder(
-      column: $table.notes, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<DateTime> get dueDate => $composableBuilder(
-      column: $table.dueDate, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get status => $composableBuilder(
-      column: $table.status, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
-      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
-      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
-      column: $table.deletedAt, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<bool> get dirty => $composableBuilder(
-      column: $table.dirty, builder: (column) => ColumnOrderings(column));
-}
-
-class $$LoansTableAnnotationComposer
-    extends Composer<_$AppDatabase, $LoansTable> {
-  $$LoansTableAnnotationComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  GeneratedColumn<String> get id =>
-      $composableBuilder(column: $table.id, builder: (column) => column);
-
-  GeneratedColumn<String> get serverId =>
-      $composableBuilder(column: $table.serverId, builder: (column) => column);
-
-  GeneratedColumn<String> get counterpartyId => $composableBuilder(
-      column: $table.counterpartyId, builder: (column) => column);
-
-  GeneratedColumn<String> get counterpartyType => $composableBuilder(
-      column: $table.counterpartyType, builder: (column) => column);
-
-  GeneratedColumn<String> get counterpartyName => $composableBuilder(
-      column: $table.counterpartyName, builder: (column) => column);
-
-  GeneratedColumn<String> get counterpartyAvatar => $composableBuilder(
-      column: $table.counterpartyAvatar, builder: (column) => column);
-
-  GeneratedColumn<String> get loanType =>
-      $composableBuilder(column: $table.loanType, builder: (column) => column);
-
-  GeneratedColumn<double> get amount =>
-      $composableBuilder(column: $table.amount, builder: (column) => column);
-
-  GeneratedColumn<double> get paidAmount => $composableBuilder(
-      column: $table.paidAmount, builder: (column) => column);
-
-  GeneratedColumn<String> get currency =>
-      $composableBuilder(column: $table.currency, builder: (column) => column);
-
-  GeneratedColumn<String> get description => $composableBuilder(
-      column: $table.description, builder: (column) => column);
-
-  GeneratedColumn<String> get notes =>
-      $composableBuilder(column: $table.notes, builder: (column) => column);
-
-  GeneratedColumn<DateTime> get dueDate =>
-      $composableBuilder(column: $table.dueDate, builder: (column) => column);
-
-  GeneratedColumn<String> get status =>
-      $composableBuilder(column: $table.status, builder: (column) => column);
-
-  GeneratedColumn<DateTime> get createdAt =>
-      $composableBuilder(column: $table.createdAt, builder: (column) => column);
-
-  GeneratedColumn<DateTime> get updatedAt =>
-      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
-
-  GeneratedColumn<DateTime> get deletedAt =>
-      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
-
-  GeneratedColumn<bool> get dirty =>
-      $composableBuilder(column: $table.dirty, builder: (column) => column);
-}
-
-class $$LoansTableTableManager extends RootTableManager<
-    _$AppDatabase,
-    $LoansTable,
-    Loan,
-    $$LoansTableFilterComposer,
-    $$LoansTableOrderingComposer,
-    $$LoansTableAnnotationComposer,
-    $$LoansTableCreateCompanionBuilder,
-    $$LoansTableUpdateCompanionBuilder,
-    (Loan, BaseReferences<_$AppDatabase, $LoansTable, Loan>),
-    Loan,
-    PrefetchHooks Function()> {
-  $$LoansTableTableManager(_$AppDatabase db, $LoansTable table)
-      : super(TableManagerState(
-          db: db,
-          table: table,
-          createFilteringComposer: () =>
-              $$LoansTableFilterComposer($db: db, $table: table),
-          createOrderingComposer: () =>
-              $$LoansTableOrderingComposer($db: db, $table: table),
-          createComputedFieldComposer: () =>
-              $$LoansTableAnnotationComposer($db: db, $table: table),
-          updateCompanionCallback: ({
-            Value<String> id = const Value.absent(),
-            Value<String?> serverId = const Value.absent(),
-            Value<String> counterpartyId = const Value.absent(),
-            Value<String> counterpartyType = const Value.absent(),
-            Value<String> counterpartyName = const Value.absent(),
-            Value<String?> counterpartyAvatar = const Value.absent(),
-            Value<String> loanType = const Value.absent(),
-            Value<double> amount = const Value.absent(),
-            Value<double> paidAmount = const Value.absent(),
-            Value<String> currency = const Value.absent(),
-            Value<String> description = const Value.absent(),
-            Value<String> notes = const Value.absent(),
-            Value<DateTime?> dueDate = const Value.absent(),
-            Value<String> status = const Value.absent(),
-            Value<DateTime?> createdAt = const Value.absent(),
-            Value<DateTime?> updatedAt = const Value.absent(),
-            Value<DateTime?> deletedAt = const Value.absent(),
-            Value<bool> dirty = const Value.absent(),
-            Value<int> rowid = const Value.absent(),
-          }) =>
-              LoansCompanion(
-            id: id,
-            serverId: serverId,
-            counterpartyId: counterpartyId,
-            counterpartyType: counterpartyType,
-            counterpartyName: counterpartyName,
-            counterpartyAvatar: counterpartyAvatar,
-            loanType: loanType,
-            amount: amount,
-            paidAmount: paidAmount,
-            currency: currency,
-            description: description,
-            notes: notes,
-            dueDate: dueDate,
-            status: status,
-            createdAt: createdAt,
-            updatedAt: updatedAt,
-            deletedAt: deletedAt,
-            dirty: dirty,
-            rowid: rowid,
-          ),
-          createCompanionCallback: ({
-            required String id,
-            Value<String?> serverId = const Value.absent(),
-            required String counterpartyId,
-            Value<String> counterpartyType = const Value.absent(),
-            Value<String> counterpartyName = const Value.absent(),
-            Value<String?> counterpartyAvatar = const Value.absent(),
-            Value<String> loanType = const Value.absent(),
-            Value<double> amount = const Value.absent(),
-            Value<double> paidAmount = const Value.absent(),
-            Value<String> currency = const Value.absent(),
-            Value<String> description = const Value.absent(),
-            Value<String> notes = const Value.absent(),
-            Value<DateTime?> dueDate = const Value.absent(),
-            Value<String> status = const Value.absent(),
-            Value<DateTime?> createdAt = const Value.absent(),
-            Value<DateTime?> updatedAt = const Value.absent(),
-            Value<DateTime?> deletedAt = const Value.absent(),
-            Value<bool> dirty = const Value.absent(),
-            Value<int> rowid = const Value.absent(),
-          }) =>
-              LoansCompanion.insert(
-            id: id,
-            serverId: serverId,
-            counterpartyId: counterpartyId,
-            counterpartyType: counterpartyType,
-            counterpartyName: counterpartyName,
-            counterpartyAvatar: counterpartyAvatar,
-            loanType: loanType,
-            amount: amount,
-            paidAmount: paidAmount,
-            currency: currency,
-            description: description,
-            notes: notes,
-            dueDate: dueDate,
-            status: status,
-            createdAt: createdAt,
-            updatedAt: updatedAt,
-            deletedAt: deletedAt,
-            dirty: dirty,
-            rowid: rowid,
-          ),
-          withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
-              .toList(),
-          prefetchHooksCallback: null,
-        ));
-}
-
-typedef $$LoansTableProcessedTableManager = ProcessedTableManager<
-    _$AppDatabase,
-    $LoansTable,
-    Loan,
-    $$LoansTableFilterComposer,
-    $$LoansTableOrderingComposer,
-    $$LoansTableAnnotationComposer,
-    $$LoansTableCreateCompanionBuilder,
-    $$LoansTableUpdateCompanionBuilder,
-    (Loan, BaseReferences<_$AppDatabase, $LoansTable, Loan>),
-    Loan,
-    PrefetchHooks Function()>;
-
-typedef $$LoanPaymentsTableCreateCompanionBuilder = LoanPaymentsCompanion
-    Function({
-  required String id,
-  Value<String?> serverId,
-  required String loanId,
-  Value<double> amount,
-  Value<String> note,
-  Value<String> method,
-  Value<DateTime?> paidAt,
-  Value<DateTime?> createdAt,
-  Value<DateTime?> deletedAt,
-  Value<bool> dirty,
-  Value<int> rowid,
-});
-typedef $$LoanPaymentsTableUpdateCompanionBuilder = LoanPaymentsCompanion
-    Function({
-  Value<String> id,
-  Value<String?> serverId,
-  Value<String> loanId,
-  Value<double> amount,
-  Value<String> note,
-  Value<String> method,
-  Value<DateTime?> paidAt,
-  Value<DateTime?> createdAt,
-  Value<DateTime?> deletedAt,
-  Value<bool> dirty,
-  Value<int> rowid,
-});
-
-class $$LoanPaymentsTableFilterComposer
-    extends Composer<_$AppDatabase, $LoanPaymentsTable> {
-  $$LoanPaymentsTableFilterComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnFilters<String> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get serverId => $composableBuilder(
-      column: $table.serverId, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get loanId => $composableBuilder(
-      column: $table.loanId, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<double> get amount => $composableBuilder(
-      column: $table.amount, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get note => $composableBuilder(
-      column: $table.note, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get method => $composableBuilder(
-      column: $table.method, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<DateTime> get paidAt => $composableBuilder(
-      column: $table.paidAt, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<DateTime> get createdAt => $composableBuilder(
-      column: $table.createdAt, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<DateTime> get deletedAt => $composableBuilder(
-      column: $table.deletedAt, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<bool> get dirty => $composableBuilder(
-      column: $table.dirty, builder: (column) => ColumnFilters(column));
-}
-
-class $$LoanPaymentsTableOrderingComposer
-    extends Composer<_$AppDatabase, $LoanPaymentsTable> {
-  $$LoanPaymentsTableOrderingComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnOrderings<String> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get serverId => $composableBuilder(
-      column: $table.serverId, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get loanId => $composableBuilder(
-      column: $table.loanId, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<double> get amount => $composableBuilder(
-      column: $table.amount, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get note => $composableBuilder(
-      column: $table.note, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get method => $composableBuilder(
-      column: $table.method, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<DateTime> get paidAt => $composableBuilder(
-      column: $table.paidAt, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
-      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
-      column: $table.deletedAt, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<bool> get dirty => $composableBuilder(
-      column: $table.dirty, builder: (column) => ColumnOrderings(column));
-}
-
-class $$LoanPaymentsTableAnnotationComposer
-    extends Composer<_$AppDatabase, $LoanPaymentsTable> {
-  $$LoanPaymentsTableAnnotationComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  GeneratedColumn<String> get id =>
-      $composableBuilder(column: $table.id, builder: (column) => column);
-
-  GeneratedColumn<String> get serverId =>
-      $composableBuilder(column: $table.serverId, builder: (column) => column);
-
-  GeneratedColumn<String> get loanId =>
-      $composableBuilder(column: $table.loanId, builder: (column) => column);
-
-  GeneratedColumn<double> get amount =>
-      $composableBuilder(column: $table.amount, builder: (column) => column);
-
-  GeneratedColumn<String> get note =>
-      $composableBuilder(column: $table.note, builder: (column) => column);
-
-  GeneratedColumn<String> get method =>
-      $composableBuilder(column: $table.method, builder: (column) => column);
-
-  GeneratedColumn<DateTime> get paidAt =>
-      $composableBuilder(column: $table.paidAt, builder: (column) => column);
-
-  GeneratedColumn<DateTime> get createdAt =>
-      $composableBuilder(column: $table.createdAt, builder: (column) => column);
-
-  GeneratedColumn<DateTime> get deletedAt =>
-      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
-
-  GeneratedColumn<bool> get dirty =>
-      $composableBuilder(column: $table.dirty, builder: (column) => column);
-}
-
-class $$LoanPaymentsTableTableManager extends RootTableManager<
-    _$AppDatabase,
-    $LoanPaymentsTable,
-    LoanPayment,
-    $$LoanPaymentsTableFilterComposer,
-    $$LoanPaymentsTableOrderingComposer,
-    $$LoanPaymentsTableAnnotationComposer,
-    $$LoanPaymentsTableCreateCompanionBuilder,
-    $$LoanPaymentsTableUpdateCompanionBuilder,
-    (
-      LoanPayment,
-      BaseReferences<_$AppDatabase, $LoanPaymentsTable, LoanPayment>
-    ),
-    LoanPayment,
-    PrefetchHooks Function()> {
-  $$LoanPaymentsTableTableManager(_$AppDatabase db, $LoanPaymentsTable table)
-      : super(TableManagerState(
-          db: db,
-          table: table,
-          createFilteringComposer: () =>
-              $$LoanPaymentsTableFilterComposer($db: db, $table: table),
-          createOrderingComposer: () =>
-              $$LoanPaymentsTableOrderingComposer($db: db, $table: table),
-          createComputedFieldComposer: () =>
-              $$LoanPaymentsTableAnnotationComposer($db: db, $table: table),
-          updateCompanionCallback: ({
-            Value<String> id = const Value.absent(),
-            Value<String?> serverId = const Value.absent(),
-            Value<String> loanId = const Value.absent(),
-            Value<double> amount = const Value.absent(),
-            Value<String> note = const Value.absent(),
-            Value<String> method = const Value.absent(),
-            Value<DateTime?> paidAt = const Value.absent(),
-            Value<DateTime?> createdAt = const Value.absent(),
-            Value<DateTime?> deletedAt = const Value.absent(),
-            Value<bool> dirty = const Value.absent(),
-            Value<int> rowid = const Value.absent(),
-          }) =>
-              LoanPaymentsCompanion(
-            id: id,
-            serverId: serverId,
-            loanId: loanId,
-            amount: amount,
-            note: note,
-            method: method,
-            paidAt: paidAt,
-            createdAt: createdAt,
-            deletedAt: deletedAt,
-            dirty: dirty,
-            rowid: rowid,
-          ),
-          createCompanionCallback: ({
-            required String id,
-            Value<String?> serverId = const Value.absent(),
-            required String loanId,
-            Value<double> amount = const Value.absent(),
-            Value<String> note = const Value.absent(),
-            Value<String> method = const Value.absent(),
-            Value<DateTime?> paidAt = const Value.absent(),
-            Value<DateTime?> createdAt = const Value.absent(),
-            Value<DateTime?> deletedAt = const Value.absent(),
-            Value<bool> dirty = const Value.absent(),
-            Value<int> rowid = const Value.absent(),
-          }) =>
-              LoanPaymentsCompanion.insert(
-            id: id,
-            serverId: serverId,
-            loanId: loanId,
-            amount: amount,
-            note: note,
-            method: method,
-            paidAt: paidAt,
-            createdAt: createdAt,
-            deletedAt: deletedAt,
-            dirty: dirty,
-            rowid: rowid,
-          ),
-          withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
-              .toList(),
-          prefetchHooksCallback: null,
-        ));
-}
-
-typedef $$LoanPaymentsTableProcessedTableManager = ProcessedTableManager<
-    _$AppDatabase,
-    $LoanPaymentsTable,
-    LoanPayment,
-    $$LoanPaymentsTableFilterComposer,
-    $$LoanPaymentsTableOrderingComposer,
-    $$LoanPaymentsTableAnnotationComposer,
-    $$LoanPaymentsTableCreateCompanionBuilder,
-    $$LoanPaymentsTableUpdateCompanionBuilder,
-    (
-      LoanPayment,
-      BaseReferences<_$AppDatabase, $LoanPaymentsTable, LoanPayment>
-    ),
-    LoanPayment,
     PrefetchHooks Function()>;
 
 class $AppDatabaseManager {

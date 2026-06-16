@@ -183,11 +183,14 @@ class Reactions extends Table {
 /// Local-only contacts (no app account). Used as counterparties for loans.
 class GuestContacts extends Table {
   TextColumn get id => text()();
+  TextColumn get serverId => text().nullable()();
   TextColumn get name => text().withDefault(const Constant(''))();
   TextColumn get phone => text().nullable()();
   TextColumn get email => text().nullable()();
   TextColumn get avatarColor => text().withDefault(const Constant('#6C5CE7'))();
   DateTimeColumn get createdAt => dateTime().nullable()();
+  BoolColumn get dirty => boolean().withDefault(const Constant(false))();
+  DateTimeColumn get deletedAt => dateTime().nullable()();
   @override
   Set<Column> get primaryKey => {id};
 }
@@ -282,7 +285,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forExecutor(super.e);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -293,6 +296,11 @@ class AppDatabase extends _$AppDatabase {
             await m.createTable(guestContacts);
             await m.createTable(loans);
             await m.createTable(loanPayments);
+          }
+          if (from < 4) {
+            await m.addColumn(guestContacts, guestContacts.serverId);
+            await m.addColumn(guestContacts, guestContacts.dirty);
+            await m.addColumn(guestContacts, guestContacts.deletedAt);
           }
         },
       );

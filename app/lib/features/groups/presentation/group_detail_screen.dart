@@ -150,6 +150,11 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
             ),
             actions: [
               IconButton(
+                icon: const Icon(Icons.account_balance_wallet_rounded),
+                tooltip: 'Payment info',
+                onPressed: () => context.push('/groups/${group.id}/payments'),
+              ),
+              IconButton(
                 icon: const Icon(Icons.edit_rounded),
                 tooltip: 'Edit group',
                 onPressed: () => context.push('/groups/${group.id}/edit'),

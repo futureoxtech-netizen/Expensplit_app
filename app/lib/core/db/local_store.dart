@@ -49,6 +49,7 @@ class LocalStore {
         nonEmpty('goals') ||
         nonEmpty('activity') ||
         nonEmpty('loans') ||
+        nonEmpty('guestContacts') ||
         nonEmpty('deletions');
     final myId = currentUser?['_id']?.toString() ?? '';
     await db.transaction(() async {
@@ -75,6 +76,9 @@ class LocalStore {
       }
       for (final l in (data['loans'] as List? ?? [])) {
         await _upsertLoan(l as Map<String, dynamic>, myId);
+      }
+      for (final gc in (data['guestContacts'] as List? ?? [])) {
+        await _upsertGuestContact(gc as Map<String, dynamic>);
       }
       for (final d in (data['deletions'] as List? ?? [])) {
         await _applyDeletion(d as Map<String, dynamic>);
@@ -1444,6 +1448,24 @@ class LocalStore {
       (db.update(db.syncQueue)..where((t) => t.opId.equals(opId)))
           .write(SyncQueueCompanion(lastError: Value(error), attempts: Value(attempts)));
 
+  /// One-time self-heal for loans. Loan create/payment pushes used to be marked
+  /// permanently 'failed' because the server's success responses lacked the
+  /// `ok:true` envelope the client requires (now fixed) — that left an
+  /// un-synced orphan row beside the pulled server copy, i.e. a duplicate.
+  /// Resetting those ops to 'pending' re-drives them idempotently (they carry a
+  /// clientOpId), which stamps the orphan row's serverId so the read-side
+  /// de-dup collapses the duplicate. Safe to call on every startup: ops that
+  /// genuinely can't succeed simply fail again.
+  Future<int> requeueFailedLoanOps() =>
+      (db.update(db.syncQueue)
+            ..where((t) =>
+                t.status.equals('failed') &
+                t.entityType.isIn(['loan', 'loanPayment'])))
+          .write(const SyncQueueCompanion(
+            status: Value('pending'),
+            attempts: Value(0),
+          ));
+
   /// Resolve a local entity id to its server id (null if not yet synced).
   Future<String?> serverIdFor(String entityType, String localId) async {
     switch (entityType) {
@@ -1460,6 +1482,8 @@ class LocalStore {
         return (await (db.select(db.goals)..where((t) => t.id.equals(localId))).getSingleOrNull())?.serverId;
       case 'loan':
         return (await (db.select(db.loans)..where((t) => t.id.equals(localId))).getSingleOrNull())?.serverId;
+      case 'guestContact':
+        return (await (db.select(db.guestContacts)..where((t) => t.id.equals(localId))).getSingleOrNull())?.serverId;
     }
     return null;
   }
@@ -1491,6 +1515,10 @@ class LocalStore {
         await (db.update(db.loans)..where((t) => t.id.equals(localId)))
             .write(LoansCompanion(serverId: Value(serverId), dirty: const Value(false)));
         break;
+      case 'guestContact':
+        await (db.update(db.guestContacts)..where((t) => t.id.equals(localId)))
+            .write(GuestContactsCompanion(serverId: Value(serverId), dirty: const Value(false)));
+        break;
     }
   }
 
@@ -1508,6 +1536,9 @@ class LocalStore {
         break;
       case 'goal':
         await (db.update(db.goals)..where((t) => t.id.equals(localId))).write(const GoalsCompanion(dirty: Value(false)));
+        break;
+      case 'guestContact':
+        await (db.update(db.guestContacts)..where((t) => t.id.equals(localId))).write(const GuestContactsCompanion(dirty: Value(false)));
         break;
     }
   }
@@ -1532,6 +1563,9 @@ class LocalStore {
       case 'loanPayment':
         await (db.delete(db.loanPayments)..where((t) => t.id.equals(localId))).go();
         break;
+      case 'guestContact':
+        await (db.delete(db.guestContacts)..where((t) => t.id.equals(localId))).go();
+        break;
     }
   }
 
@@ -1552,7 +1586,20 @@ class LocalStore {
           email: Value(email),
           avatarColor: Value(avatarColor ?? '#6C5CE7'),
           createdAt: Value(DateTime.now()),
+          dirty: const Value(true),
         ));
+    await enqueue(
+      entityType: 'guestContact',
+      opType: 'create',
+      entityLocalId: id,
+      payload: {
+        'name': name,
+        if (phone != null) 'phone': phone,
+        if (email != null) 'email': email,
+        'avatarColor': avatarColor ?? '#6C5CE7',
+        'clientId': id,
+      },
+    );
     return id;
   }
 
@@ -1561,15 +1608,49 @@ class LocalStore {
           name: name != null ? Value(name) : const Value.absent(),
           phone: phone != null ? Value(phone) : const Value.absent(),
           email: email != null ? Value(email) : const Value.absent(),
+          dirty: const Value(true),
         ));
+    final contact = await (db.select(db.guestContacts)..where((t) => t.id.equals(id))).getSingleOrNull();
+    if (contact?.serverId != null) {
+      await enqueue(
+        entityType: 'guestContact',
+        opType: 'update',
+        entityLocalId: id,
+        payload: {
+          if (name != null) 'name': name,
+          if (phone != null) 'phone': phone,
+          if (email != null) 'email': email,
+        },
+      );
+    }
   }
 
   Future<void> deleteGuestContactLocal(String id) async {
-    await (db.delete(db.guestContacts)..where((t) => t.id.equals(id))).go();
+    final contact = await (db.select(db.guestContacts)..where((t) => t.id.equals(id))).getSingleOrNull();
+    if (contact?.serverId != null) {
+      // Synced to server — soft-delete and enqueue
+      await (db.update(db.guestContacts)..where((t) => t.id.equals(id)))
+          .write(GuestContactsCompanion(deletedAt: Value(DateTime.now()), dirty: const Value(true)));
+      await enqueue(
+        entityType: 'guestContact',
+        opType: 'delete',
+        entityLocalId: id,
+        payload: {},
+      );
+    } else {
+      // Not yet on server — cancel pending create and hard-delete
+      await (db.delete(db.syncQueue)
+            ..where((t) =>
+                t.entityType.equals('guestContact') & t.entityLocalId.equals(id)))
+          .go();
+      await (db.delete(db.guestContacts)..where((t) => t.id.equals(id))).go();
+    }
   }
 
   Stream<List<Map<String, dynamic>>> watchGuestContactsJson() {
-    return (db.select(db.guestContacts)..orderBy([(t) => OrderingTerm.asc(t.name)]))
+    return (db.select(db.guestContacts)
+          ..where((t) => t.deletedAt.isNull())
+          ..orderBy([(t) => OrderingTerm.asc(t.name)]))
         .watch()
         .map((rows) => [
               for (final c in rows)
@@ -1626,10 +1707,21 @@ class LocalStore {
         .customSelect('SELECT 1 AS x', readsFrom: {db.loans, db.loanPayments})
         .watch()
         .asyncMap((_) async {
-      final loanRows = await (db.select(db.loans)
+      final rawLoans = await (db.select(db.loans)
             ..where((t) => t.deletedAt.isNull())
             ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
           .get();
+      // Safety net against duplicate rows for the same server loan. A pull that
+      // lands a row keyed by `server_id` before an in-flight create-push has
+      // stamped `server_id` onto the original local (uuid) row can briefly leave
+      // two rows for one loan. Collapse by serverId so the user never sees the
+      // entry twice; rows still pending their first sync (serverId == null) are
+      // always kept.
+      final seenServerIds = <String>{};
+      final loanRows = [
+        for (final l in rawLoans)
+          if (l.serverId == null || seenServerIds.add(l.serverId!)) l,
+      ];
       final ids = loanRows.map((l) => l.id).toList();
       if (ids.isEmpty) return <Map<String, dynamic>>[];
       final payments = await (db.select(db.loanPayments)
@@ -1701,7 +1793,8 @@ class LocalStore {
           updatedAt: Value(DateTime.now()),
           dirty: const Value(true),
         ));
-    // Only queue server sync when counterparty is an app user.
+    // Queue server sync for all loans — both app-user and guest loans.
+    // Guest loans use loanType + guestCounterparty; user loans use lenderId/borrowerId.
     if (counterpartyType == 'user') {
       await enqueue(
         opId: opId,
@@ -1709,8 +1802,31 @@ class LocalStore {
         opType: 'create',
         entityLocalId: id,
         payload: {
-          'borrowerId': loanType == 'given' ? counterpartyId : currentUser?['_id'] ?? '',
-          'lenderId': loanType == 'given' ? currentUser?['_id'] ?? '' : counterpartyId,
+          'borrowerId': loanType == 'given' ? counterpartyId : (currentUser?['_id'] ?? ''),
+          'lenderId': loanType == 'given' ? (currentUser?['_id'] ?? '') : counterpartyId,
+          'amount': amount,
+          'currency': currency,
+          'description': description,
+          'notes': notes,
+          if (dueDate != null) 'dueDate': _iso(dueDate),
+          'clientOpId': opId,
+        },
+      );
+    } else {
+      // Guest loan — send guestCounterparty info so the server can store and
+      // return it during future syncs. counterpartyAvatar is the avatarColor.
+      await enqueue(
+        opId: opId,
+        entityType: 'loan',
+        opType: 'create',
+        entityLocalId: id,
+        payload: {
+          'loanType': loanType,
+          'guestCounterparty': {
+            'clientId': counterpartyId,
+            'name': counterpartyName,
+            if (counterpartyAvatar != null) 'avatarColor': counterpartyAvatar,
+          },
           'amount': amount,
           'currency': currency,
           'description': description,
@@ -1749,7 +1865,7 @@ class LocalStore {
         .write(LoansCompanion(deletedAt: Value(DateTime.now()), dirty: const Value(true)));
     // Find serverId to enqueue delete.
     final loan = await (db.select(db.loans)..where((t) => t.id.equals(id))).getSingleOrNull();
-    if (loan?.serverId != null && loan!.counterpartyType == 'user') {
+    if (loan?.serverId != null) {
       await enqueue(entityType: 'loan', opType: 'delete', entityLocalId: id, payload: {});
     }
   }
@@ -1776,8 +1892,8 @@ class LocalStore {
           dirty: const Value(true),
         ));
     await updateLoanPaidAmountLocal(loanId);
-    // Queue server sync only for app-user loans that are synced.
-    if (loan != null && loan.counterpartyType == 'user' && loan.serverId != null) {
+    // Queue server sync for all loans that have been synced (both user and guest).
+    if (loan != null && loan.serverId != null) {
       await enqueue(
         opId: opId,
         entityType: 'loanPayment',
@@ -1800,7 +1916,7 @@ class LocalStore {
     final payment =
         await (db.select(db.loanPayments)..where((t) => t.id.equals(paymentId))).getSingleOrNull();
     final loan = await (db.select(db.loans)..where((t) => t.id.equals(loanId))).getSingleOrNull();
-    final isSynced = loan != null && loan.counterpartyType == 'user';
+    final isSynced = loan != null && loan.serverId != null;
 
     if (payment != null && isSynced && payment.serverId != null) {
       // Already on the server — soft-delete locally (so a pull can't resurrect
@@ -1829,22 +1945,67 @@ class LocalStore {
   }
 
   // ── LOAN PULL (from /sync) ─────────────────────────────────────────────────
+  Future<void> _upsertGuestContact(Map<String, dynamic> j) async {
+    final serverId = _idOf(j);
+    // The client's original local UUID is stored as clientId on the server.
+    // Use it as the local id so loans that reference this contact stay linked.
+    final localId = j['clientId']?.toString() ?? serverId;
+
+    if (j['deletedAt'] != null) {
+      // Deleted on another device — remove locally
+      await (db.delete(db.guestContacts)
+            ..where((t) => t.id.equals(localId) | t.serverId.equals(serverId)))
+          .go();
+      return;
+    }
+
+    await db.into(db.guestContacts).insertOnConflictUpdate(GuestContactsCompanion.insert(
+          id: localId,
+          serverId: Value(serverId),
+          name: Value(j['name']?.toString() ?? ''),
+          phone: Value(j['phone']?.toString()),
+          email: Value(j['email']?.toString()),
+          avatarColor: Value(j['avatarColor']?.toString() ?? '#6C5CE7'),
+          createdAt: Value(_date(j['createdAt'])),
+          dirty: const Value(false),
+        ));
+  }
+
   Future<void> _upsertLoan(Map<String, dynamic> j, String myId) async {
     final serverId = _idOf(j);
     final id = await _localIdFor(db.loans, serverId);
     if (await _isDirty(db.loans, id)) return;
 
-    final lender = j['lender'];
-    final borrower = j['borrower'];
-    final lenderId = lender is Map ? _idOf(lender) : lender.toString();
-    final borrowerId = borrower is Map ? _idOf(borrower) : borrower.toString();
+    final counterpartyType = j['counterpartyType']?.toString() ?? 'user';
 
-    final isLender = lenderId == myId;
-    final loanType = isLender ? 'given' : 'taken';
-    final counterparty = isLender ? borrower : lender;
-    final counterpartyId = isLender ? borrowerId : lenderId;
-    final counterpartyName = counterparty is Map ? (counterparty['name'] ?? '') : '';
-    final counterpartyAvatar = counterparty is Map ? counterparty['avatarUrl'] : null;
+    late final String loanType;
+    late final String counterpartyId;
+    late final String counterpartyName;
+    late final String? counterpartyAvatar;
+
+    if (counterpartyType == 'guest') {
+      // One of lender/borrower is the real user; the other is null.
+      // If lender field is non-null the real user is the lender → loanType='given'.
+      final lenderRaw = j['lender'];
+      loanType = lenderRaw != null ? 'given' : 'taken';
+      final guest = (j['guestCounterparty'] as Map<String, dynamic>?) ?? {};
+      // Use clientId as local id so existing loan refs stay intact after pull.
+      counterpartyId = guest['clientId']?.toString() ?? serverId;
+      counterpartyName = guest['name']?.toString() ?? '';
+      counterpartyAvatar = null;
+    } else {
+      final lender = j['lender'];
+      final borrower = j['borrower'];
+      final lenderId = lender is Map ? _idOf(lender) : lender.toString();
+      final borrowerId = borrower is Map ? _idOf(borrower) : borrower.toString();
+
+      final isLender = lenderId == myId;
+      loanType = isLender ? 'given' : 'taken';
+      final counterparty = isLender ? borrower : lender;
+      counterpartyId = isLender ? borrowerId : lenderId;
+      counterpartyName = counterparty is Map ? (counterparty['name'] ?? '') : '';
+      counterpartyAvatar = counterparty is Map ? counterparty['avatarUrl'] : null;
+    }
 
     // A pending loan reads differently per viewer: the creator is *awaiting*
     // the counterparty's decision ('pending_sent'), the counterparty must act
@@ -1859,7 +2020,7 @@ class LocalStore {
           id: id,
           serverId: Value(serverId),
           counterpartyId: counterpartyId.toString(),
-          counterpartyType: const Value('user'),
+          counterpartyType: Value(counterpartyType),
           counterpartyName: Value(counterpartyName.toString()),
           counterpartyAvatar: Value(counterpartyAvatar?.toString()),
           loanType: Value(loanType),

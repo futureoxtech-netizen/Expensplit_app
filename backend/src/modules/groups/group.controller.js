@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { groupService } from './group.service.js';
+import { paymentInputSchema } from '../users/user.controller.js';
 
 export const groupController = {
   create: asyncHandler(async (req, res) => {
@@ -108,6 +109,45 @@ export const groupController = {
 
   balances: asyncHandler(async (req, res) => {
     const result = await groupService.balances({ userId: req.user.id, groupId: req.params.id });
+    res.json({ ok: true, data: result });
+  }),
+
+  // ── Shared payment information ───────────────────────────────────────────────
+  listPaymentInfos: asyncHandler(async (req, res) => {
+    const data = await groupService.listPaymentInfos({
+      userId: req.user.id,
+      groupId: req.params.id,
+    });
+    res.json({ ok: true, data });
+  }),
+
+  addPaymentInfo: asyncHandler(async (req, res) => {
+    const data = paymentInputSchema.parse(req.body);
+    const result = await groupService.addPaymentInfo({
+      userId: req.user.id,
+      groupId: req.params.id,
+      data,
+    });
+    res.status(201).json({ ok: true, data: result });
+  }),
+
+  updatePaymentInfo: asyncHandler(async (req, res) => {
+    const data = paymentInputSchema.parse(req.body);
+    const result = await groupService.updatePaymentInfo({
+      userId: req.user.id,
+      groupId: req.params.id,
+      infoId: req.params.infoId,
+      data,
+    });
+    res.json({ ok: true, data: result });
+  }),
+
+  deletePaymentInfo: asyncHandler(async (req, res) => {
+    const result = await groupService.deletePaymentInfo({
+      userId: req.user.id,
+      groupId: req.params.id,
+      infoId: req.params.infoId,
+    });
     res.json({ ok: true, data: result });
   }),
 };

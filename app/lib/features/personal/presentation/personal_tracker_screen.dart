@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/error_messages.dart';
 import '../../../core/pagination/paged_sliver_list.dart';
+import '../../../core/services/ad_service.dart';
 import '../../../core/utils/amount_input_formatter.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../shared/widgets/ad_banner_widget.dart';
@@ -1186,6 +1189,7 @@ class _AddExpenseSheetState extends State<_AddExpenseSheet> {
           date: _date,
           receiptUrl: receiptUrl,
         );
+        unawaited(AdService.instance.onRecordSaved());
       }
       widget.onSaved();
       if (mounted) {

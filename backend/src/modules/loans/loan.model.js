@@ -2,8 +2,20 @@ import mongoose from 'mongoose';
 
 const loanSchema = new mongoose.Schema(
   {
-    lender: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    borrower: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    // For user-to-user loans, both are set. For guest loans, only the real user
+    // side is set; the other is null and guestCounterparty carries the info.
+    lender: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    borrower: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    // 'user' = both parties are registered users; 'guest' = counterparty is local-only contact
+    counterpartyType: { type: String, enum: ['user', 'guest'], default: 'user' },
+    // Populated only when counterpartyType == 'guest'
+    guestCounterparty: {
+      clientId: { type: String, default: null }, // client's local UUID for the guest contact
+      name: { type: String, default: '' },
+      phone: { type: String, default: null },
+      email: { type: String, default: null },
+      avatarColor: { type: String, default: '#6C5CE7' },
+    },
     amount: { type: Number, required: true, min: 0.01 },
     paidAmount: { type: Number, default: 0, min: 0 },
     currency: { type: String, default: 'PKR' },

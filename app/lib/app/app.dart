@@ -7,7 +7,6 @@ import 'theme/app_theme.dart';
 import '../core/network/connectivity_service.dart';
 import '../core/network/dio_client.dart';
 import '../core/network/realtime.dart';
-import '../core/services/ad_service.dart';
 import '../core/services/in_app_banner.dart';
 import '../core/services/push_notifications_service.dart';
 import '../core/sync/sync_engine.dart';
@@ -71,8 +70,8 @@ class _ExpenseAppState extends ConsumerState<ExpenseApp> with WidgetsBindingObse
       if (authState.status == AuthStatus.authenticated) {
         ref.read(realtimeBridgeProvider).bootstrap();
         SyncEngine.instance.kick();
-        // Show the App Open ad every time the app comes back to foreground.
-        AdService.instance.showAppOpenAd();
+        // App Open ads were removed — they interrupted the user on every
+        // foreground, which felt intrusive. Banner + interstitial remain.
       }
     }
   }

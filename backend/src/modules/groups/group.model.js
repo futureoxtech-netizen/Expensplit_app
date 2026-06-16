@@ -1,5 +1,18 @@
 import mongoose from 'mongoose';
 import { v4 as uuid } from 'uuid';
+import { paymentMethodFields } from '../../utils/paymentFields.js';
+
+// Payment information a member shares inside the group so the people who owe
+// them money know where to send it. Each entry belongs to one member (`user`)
+// and carries its own _id so it can be edited/removed individually. A member
+// may share several (e.g. a bank account AND an EasyPaisa wallet).
+const groupPaymentInfoSchema = new mongoose.Schema(
+  {
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    ...paymentMethodFields(),
+  },
+  { timestamps: true },
+);
 
 const memberSchema = new mongoose.Schema(
   {
@@ -45,6 +58,8 @@ const groupSchema = new mongoose.Schema(
     },
     members: { type: [memberSchema], default: [] },
     pendingMembers: { type: [pendingMemberSchema], default: [] },
+    // Per-member shared payment details (see groupPaymentInfoSchema above).
+    paymentInfos: { type: [groupPaymentInfoSchema], default: [] },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     archived: { type: Boolean, default: false },
     clientOpId: { type: String, default: null },

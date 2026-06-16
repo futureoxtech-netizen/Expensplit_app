@@ -28,5 +28,9 @@ router.post('/:id/invites/decline', groupController.declineInvite);
 router.post('/:id/leave', groupController.leave);
 router.delete('/:id', groupController.remove);
 router.get('/:id/balances', groupController.balances);
+router.get('/:id/payment-infos', groupController.listPaymentInfos);
+router.post('/:id/payment-infos', groupController.addPaymentInfo);
+router.patch('/:id/payment-infos/:infoId', groupController.updatePaymentInfo);
+router.delete('/:id/payment-infos/:infoId', groupController.deletePaymentInfo);
 
 export default router;

@@ -1,3 +1,5 @@
+import '../../payments/data/payment_method_model.dart';
+
 class UserModel {
   const UserModel({
     required this.id,
@@ -10,6 +12,7 @@ class UserModel {
     this.referralCode,
     this.isPlaceholder = false,
     this.groupInvitePolicy = 'anyone',
+    this.paymentMethods = const [],
   });
 
   factory UserModel.fromJson(Map<String, dynamic> j) => UserModel(
@@ -23,6 +26,10 @@ class UserModel {
         referralCode: j['referralCode'],
         isPlaceholder: j['isPlaceholder'] == true,
         groupInvitePolicy: (j['groupInvitePolicy'] ?? 'anyone').toString(),
+        paymentMethods: ((j['paymentMethods'] ?? const []) as List)
+            .whereType<Map>()
+            .map((m) => PaymentMethodModel.fromJson(Map<String, dynamic>.from(m)))
+            .toList(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -36,6 +43,9 @@ class UserModel {
         'referralCode': referralCode,
         'isPlaceholder': isPlaceholder,
         'groupInvitePolicy': groupInvitePolicy,
+        'paymentMethods': paymentMethods
+            .map((m) => {'id': m.id, ...m.toInput()})
+            .toList(),
       };
 
   final String id;
@@ -56,6 +66,9 @@ class UserModel {
   /// `'approval'` (added as a pending invite they must accept first).
   final String groupInvitePolicy;
 
+  /// Payment methods the user saved on their profile (bank, wallets, etc.).
+  final List<PaymentMethodModel> paymentMethods;
+
   bool get requiresGroupApproval => groupInvitePolicy == 'approval';
 
   UserModel copyWith({
@@ -65,6 +78,7 @@ class UserModel {
     String? locale,
     String? bio,
     String? groupInvitePolicy,
+    List<PaymentMethodModel>? paymentMethods,
   }) =>
       UserModel(
         id: id,
@@ -77,5 +91,6 @@ class UserModel {
         locale: locale ?? this.locale,
         bio: bio ?? this.bio,
         groupInvitePolicy: groupInvitePolicy ?? this.groupInvitePolicy,
+        paymentMethods: paymentMethods ?? this.paymentMethods,
       );
 }

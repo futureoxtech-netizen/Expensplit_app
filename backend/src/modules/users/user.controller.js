@@ -12,6 +12,7 @@ import { PersonalExpense } from '../personal/personal.model.js';
 import { NotFound, BadRequest } from '../../utils/errors.js';
 import { uploadToS3, deleteManyFromS3 } from '../../middleware/upload.js';
 import { effectivePayers, pairwiseNetForExpense } from '../../utils/expensePayers.js';
+import { PAYMENT_TYPES } from '../../utils/paymentFields.js';
 
 const updateSchema = z.object({
   name: z.string().min(2).max(80).optional(),
@@ -25,6 +26,19 @@ const updateSchema = z.object({
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1),
   newPassword: z.string().min(8).max(128),
+});
+
+// Shared validation for a payment method / payment info payload. `accountNumber`
+// is required because it's the actual "where to send money" value; everything
+// else is optional context. Exported so the groups module reuses the exact
+// same rules for shared in-group payment info.
+export const paymentInputSchema = z.object({
+  type: z.enum(PAYMENT_TYPES),
+  label: z.string().trim().max(60).optional().default(''),
+  accountName: z.string().trim().max(80).optional().default(''),
+  accountNumber: z.string().trim().min(1, 'Account number / handle is required').max(120),
+  bankName: z.string().trim().max(80).optional().default(''),
+  note: z.string().trim().max(200).optional().default(''),
 });
 
 export const userController = {
@@ -74,6 +88,42 @@ export const userController = {
     // Note: we intentionally keep existing refresh tokens valid so the user
     // stays signed in on this device after changing their password.
     res.json({ ok: true, message: 'Password updated successfully' });
+  }),
+
+  // ── Payment methods ─────────────────────────────────────────────────────────
+  // All three return the full updated user (toPublic), so the client just
+  // replaces its cached user — no separate list endpoint needed.
+  addPaymentMethod: asyncHandler(async (req, res) => {
+    const data = paymentInputSchema.parse(req.body);
+    const user = await User.findById(req.user.id);
+    if (!user) throw NotFound('User not found');
+    if (user.paymentMethods.length >= 20) {
+      throw BadRequest('You can save up to 20 payment methods.', 'PAYMENT_METHOD_LIMIT');
+    }
+    user.paymentMethods.push(data);
+    await user.save();
+    res.status(201).json({ ok: true, data: user.toPublic() });
+  }),
+
+  updatePaymentMethod: asyncHandler(async (req, res) => {
+    const data = paymentInputSchema.parse(req.body);
+    const user = await User.findById(req.user.id);
+    if (!user) throw NotFound('User not found');
+    const method = user.paymentMethods.id(req.params.methodId);
+    if (!method) throw NotFound('Payment method not found');
+    method.set(data);
+    await user.save();
+    res.json({ ok: true, data: user.toPublic() });
+  }),
+
+  deletePaymentMethod: asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user.id);
+    if (!user) throw NotFound('User not found');
+    const method = user.paymentMethods.id(req.params.methodId);
+    if (!method) throw NotFound('Payment method not found');
+    method.deleteOne();
+    await user.save();
+    res.json({ ok: true, data: user.toPublic() });
   }),
 
   search: asyncHandler(async (req, res) => {

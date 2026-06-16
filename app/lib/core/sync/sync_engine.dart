@@ -49,7 +49,9 @@ class SyncEngine {
     _queueSub = AppDatabase.instance.select(AppDatabase.instance.syncQueue).watch().listen((_) {
       kick();
     });
-    kick();
+    // Self-heal loan ops that a past bug marked permanently failed. The write
+    // trips the queue watcher above, which kicks a sync to re-drive them.
+    _store.requeueFailedLoanOps().whenComplete(kick);
   }
 
   void stop() {
@@ -237,6 +239,24 @@ class SyncEngine {
       case 'loan:create':
         final res = await _dio.post('/loans', body: payload);
         await _store.applyServerId('loan', localId!, _idOf(res['data']));
+        return _PushOutcome.done;
+
+      case 'guestContact:create':
+        final res = await _dio.post('/guest-contacts', body: payload);
+        await _store.applyServerId('guestContact', localId!, _idOf(res['data']));
+        return _PushOutcome.done;
+
+      case 'guestContact:update':
+        final gcServerId = await _store.serverIdFor('guestContact', localId!);
+        if (gcServerId == null) return _PushOutcome.defer;
+        await _dio.patch('/guest-contacts/$gcServerId', body: payload);
+        await _store.clearDirty('guestContact', localId);
+        return _PushOutcome.done;
+
+      case 'guestContact:delete':
+        final gcDelId = await _store.serverIdFor('guestContact', localId!);
+        if (gcDelId != null) await _dio.delete('/guest-contacts/$gcDelId');
+        await _store.hardDeleteAfterSync('guestContact', localId);
         return _PushOutcome.done;
 
       case 'loan:delete':

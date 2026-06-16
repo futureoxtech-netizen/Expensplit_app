@@ -89,7 +89,8 @@ class _AddPaymentSheetState extends ConsumerState<AddPaymentSheet> {
         ),
         child: Form(
           key: _formKey,
-          child: Padding(
+          child: SingleChildScrollView(
+            child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -239,6 +240,7 @@ class _AddPaymentSheetState extends ConsumerState<AddPaymentSheet> {
                   ),
                 ),
               ],
+            ),
             ),
           ),
         ),

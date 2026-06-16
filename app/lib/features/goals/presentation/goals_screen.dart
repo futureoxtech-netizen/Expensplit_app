@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/error_messages.dart';
+import '../../../core/services/ad_service.dart';
 import '../../../core/pagination/paged_sliver_list.dart';
 import '../../../core/utils/amount_input_formatter.dart';
 import '../../../core/utils/formatters.dart';
@@ -571,6 +574,7 @@ class _CreateGoalSheetState extends ConsumerState<CreateGoalSheet> {
           color: _color,
           notes: _notesCtrl.text.trim(),
         );
+        unawaited(AdService.instance.onRecordSaved());
       } else {
         await repo.update(
           widget.existing!.id,

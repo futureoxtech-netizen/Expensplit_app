@@ -35,7 +35,8 @@ class _LoansScreenState extends ConsumerState<LoansScreen>
   @override
   Widget build(BuildContext context) {
     final summary = ref.watch(loanSummaryProvider);
-    final pendingCount = ref.watch(pendingApprovalCountProvider);
+    final pendingGiven = ref.watch(pendingGivenCountProvider);
+    final pendingTaken = ref.watch(pendingTakenCountProvider);
     final currency = ref.watch(authProvider).user?.currency ?? 'PKR';
     final cs = Theme.of(context).colorScheme;
 
@@ -46,15 +47,26 @@ class _LoansScreenState extends ConsumerState<LoansScreen>
         bottom: TabBar(
           controller: _tabs,
           tabs: [
-            Tab(text: 'Owe Me'),
+            Tab(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Owe Me'),
+                  if (pendingGiven > 0) ...[
+                    const SizedBox(width: 6),
+                    _Badge(count: pendingGiven),
+                  ],
+                ],
+              ),
+            ),
             Tab(
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text('I Owe'),
-                  if (pendingCount > 0) ...[
+                  if (pendingTaken > 0) ...[
                     const SizedBox(width: 6),
-                    _Badge(count: pendingCount),
+                    _Badge(count: pendingTaken),
                   ],
                 ],
               ),

@@ -1,7 +1,16 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell(Get-ChildItem -Path \"C:\\\\\", \"D:\\\\\", \"$env:USERPROFILE\" -Filter \"flutter.bat\" -Recurse -ErrorAction SilentlyContinue -Depth 5 | Select-Object -First 5 FullName)"
+      "PowerShell(Get-ChildItem -Path \"C:\\\\\", \"D:\\\\\", \"$env:USERPROFILE\" -Filter \"flutter.bat\" -Recurse -ErrorAction SilentlyContinue -Depth 5 | Select-Object -First 5 FullName)",
+      "Read(//d/d/futureoxtech/Expense-Divider-App/backend/**)",
+      "Bash(flutter analyze *)",
+      "Bash(node -e \"import\\('./src/modules/groups/group.controller.js'\\).then\\(\\(\\)=>import\\('./src/modules/users/user.controller.js'\\)\\).then\\(\\(\\)=>import\\('./src/modules/groups/group.model.js'\\)\\).then\\(\\(\\)=>import\\('./src/modules/users/user.model.js'\\)\\).then\\(\\(\\)=>console.log\\('OK: modules import cleanly'\\)\\).catch\\(e=>{console.error\\('IMPORT ERROR:', e.message\\); process.exit\\(1\\)}\\)\")",
+      "Bash(npx eslint *)",
+      "Bash(cd /d/futureoxtech/Expense-Divider-App/app && grep -rn \"Widget showAppSheet\\\\|Future<T?> showAppSheet\\\\|showAppSheet<\\\\|class AppSheetHandle\\\\|Future.*showAppFixedSheet\" lib/shared/widgets/app_sheet.dart | head; echo \"--- PRIMARY ---\"; sed -n '1,45p' lib/shared/widgets/primary_button.dart)",
+      "Read(//d/d/futureoxtech/Expense-Divider-App/app/lib/shared/widgets/**)",
+      "Bash(flutter test *)",
+      "Bash(cd /d/futureoxtech/Expense-Divider-App/app && grep -n \"_localIdFor\\\\|Future<String> applyServerId\\\\|applyServerId\\\\|String _idOf\" lib/core/db/local_store.dart | head; echo \"=== _localIdFor body ===\"; sed -n '/Future<String> _localIdFor/,/^  }/p' lib/core/db/local_store.dart)",
+      "Read(//d/d/futureoxtech/Expense-Divider-App/app/lib/core/db/**)"
     ]
   }
 }

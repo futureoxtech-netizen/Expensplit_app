@@ -34,6 +34,29 @@ class LoanRepository {
             (list) => list.map(GuestContactModel.fromJson).toList(),
           );
 
+  /// Search registered Expensplit users by name OR email via the server.
+  /// Returns contact maps shaped like the picker expects. Online-only; returns
+  /// an empty list on any failure so the picker degrades gracefully offline.
+  Future<List<Map<String, dynamic>>> searchAppUsers(String query) async {
+    final q = query.trim();
+    if (q.length < 2) return [];
+    try {
+      final res = await _dio.get('/users/search', query: {'q': q});
+      final data = (res['data'] ?? const []) as List;
+      return data.whereType<Map>().map((u) {
+        return <String, dynamic>{
+          '_id': (u['id'] ?? u['_id']).toString(),
+          'name': (u['name'] ?? '').toString(),
+          'email': (u['email'] ?? '').toString(),
+          'avatarUrl': u['avatarUrl']?.toString(),
+          'isGuest': false,
+        };
+      }).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   // ── Loans ──────────────────────────────────────────────────────────────────
   Stream<List<LoanModel>> watchLoans() =>
       _store.watchLoansJson().map(
