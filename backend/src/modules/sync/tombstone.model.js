@@ -9,7 +9,7 @@ const tombstoneSchema = new mongoose.Schema(
     entityType: {
       type: String,
       required: true,
-      enum: ['expense', 'settlement', 'group', 'personalExpense', 'goal', 'member', 'reaction'],
+      enum: ['expense', 'settlement', 'group', 'personalExpense', 'goal', 'member', 'reaction', 'loan', 'guestContact'],
     },
     entityId: { type: String, required: true },
     groupId: { type: mongoose.Schema.Types.ObjectId, ref: 'Group' },

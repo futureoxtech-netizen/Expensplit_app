@@ -122,7 +122,8 @@ class GoalsRepository {
     final res = await _client.post('/goals/$gid/contributions', body: {
       'amount': amount,
       'note': note,
-      if (date != null) 'date': date.toIso8601String(),
+      // UTC — contribution date read path does .toLocal(); see date convention.
+      if (date != null) 'date': date.toUtc().toIso8601String(),
     });
     final json = res['data'] as Map<String, dynamic>;
     await _store.applyPull({'goals': [json]});
@@ -139,7 +140,7 @@ class GoalsRepository {
     final body = <String, dynamic>{};
     if (amount != null) body['amount'] = amount;
     if (note != null) body['note'] = note;
-    if (date != null) body['date'] = date.toIso8601String();
+    if (date != null) body['date'] = date.toUtc().toIso8601String();
     final gid = await SyncEngine.instance.requireServerId('goal', goalId);
     final res = await _client.patch(
         '/goals/$gid/contributions/$contributionId',

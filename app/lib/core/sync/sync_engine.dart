@@ -32,26 +32,37 @@ class SyncEngine {
   bool _running = false;
   bool _rerun = false;
   bool _started = false;
+  // The currently-running push/pull cycle, exposed so callers can await an
+  // already-in-progress run (see [sync]). Null when idle.
+  Future<void>? _inFlight;
   StreamSubscription? _connSub;
   StreamSubscription? _queueSub;
   Timer? _debounce;
 
   static const _lastSyncKey = 'lastSyncAt';
 
+  /// How many times a genuine (non-transient) client rejection is retried
+  /// before the op is parked as 'failed'. Transient errors (network, 401,
+  /// 408, 429, 5xx) never burn an attempt.
+  static const _maxAttempts = 8;
+
   /// Wire up automatic triggers. Call once after login/bootstrap.
   void start() {
     if (_started) return;
     _started = true;
     _connSub = ConnectivityService.instance.onStatusChange.listen((online) {
-      if (online) kick();
+      // Connectivity is a discrete recovery event: revive parked ops so an op
+      // that failed while offline (or on a transient error) gets re-driven.
+      if (online) _store.requeueFailedOps().whenComplete(kick);
     });
     // Any change to the queue (a new local write) kicks a debounced sync.
     _queueSub = AppDatabase.instance.select(AppDatabase.instance.syncQueue).watch().listen((_) {
       kick();
     });
-    // Self-heal loan ops that a past bug marked permanently failed. The write
-    // trips the queue watcher above, which kicks a sync to re-drive them.
-    _store.requeueFailedLoanOps().whenComplete(kick);
+    // Revive any ops a transient failure (or a past bug) parked as 'failed'.
+    // The write trips the queue watcher above, which kicks a sync to re-drive
+    // them with the smarter, attempt-bounded classification below.
+    _store.requeueFailedOps().whenComplete(kick);
   }
 
   void stop() {
@@ -80,7 +91,10 @@ class SyncEngine {
   Future<String> requireServerId(String entityType, String localId) async {
     var sid = await _store.serverIdFor(entityType, localId);
     if (sid != null && sid.isNotEmpty) return sid;
-    // Not synced yet — push the pending create, then look again.
+    // Not synced yet — revive anything a transient failure parked, then push
+    // the pending create and look again. The revive is what lets this recover
+    // without the user having to log out and back in.
+    await _store.requeueFailedOps();
     await sync();
     sid = await _store.serverIdFor(entityType, localId);
     if (sid == null || sid.isEmpty) {
@@ -95,13 +109,25 @@ class SyncEngine {
     _debounce = Timer(const Duration(milliseconds: 400), () => sync());
   }
 
-  /// Run a full push-then-pull cycle now. Returns when done.
-  Future<void> sync() async {
-    if (!ConnectivityService.instance.isOnline) return;
+  /// Run a full push-then-pull cycle now. Returns when the relevant work is
+  /// done — including any cycle that was already in progress when called.
+  ///
+  /// Coalesced + awaitable: if a cycle is already running, we flag a rerun and
+  /// return the in-flight future. That future does not complete until the rerun
+  /// (which starts *after* this call) has also finished — so a caller like
+  /// [requireServerId] that just queued a create and does `await sync()` is
+  /// guaranteed its op got a push attempt before the await resolves. Returning
+  /// early here was the root of spurious "still syncing" errors.
+  Future<void> sync() {
+    if (!ConnectivityService.instance.isOnline) return Future.value();
     if (_running) {
       _rerun = true;
-      return;
+      return _inFlight ?? Future.value();
     }
+    return _inFlight = _runCycle();
+  }
+
+  Future<void> _runCycle() async {
     _running = true;
     try {
       await _push();
@@ -110,10 +136,16 @@ class SyncEngine {
       // Swallow — individual steps already classify/record their errors.
     } finally {
       _running = false;
-      if (_rerun) {
-        _rerun = false;
-        kick();
-      }
+    }
+    // Work requested mid-cycle → chain another cycle so anyone awaiting the
+    // in-flight future still sees their newly-queued op flushed. Cleared
+    // _running first so this re-enters cleanly; it converges once no new rerun
+    // is requested (an empty pull bumps no revision, so nothing re-kicks).
+    if (_rerun) {
+      _rerun = false;
+      await sync();
+    } else {
+      _inFlight = null;
     }
   }
 
@@ -121,7 +153,18 @@ class SyncEngine {
   Future<void> _push() async {
     final ops = await _store.pendingOps();
     for (final op in ops) {
-      if (op.status == 'failed') continue; // needs manual resolution
+      // Parked after _maxAttempts genuine rejections; skipped until a discrete
+      // recovery event (start / connectivity / requireServerId) revives it.
+      if (op.status == 'failed') continue;
+      // Drop ops whose target row was hard-deleted out from under them (e.g. a
+      // group tombstone cascade removed the expense this op edits). Otherwise
+      // the op can never resolve a serverId, keeps deferring, and — since a
+      // defer breaks this loop — stalls every op queued behind it forever.
+      final localId = op.entityLocalId;
+      if (localId != null && !await _store.entityRowExists(op.entityType, localId)) {
+        await _store.deleteOp(op.opId);
+        continue;
+      }
       try {
         final handled = await _pushOne(op);
         if (handled == _PushOutcome.done) {
@@ -133,13 +176,17 @@ class SyncEngine {
         }
       } on DioException catch (e) {
         final status = e.response?.statusCode;
-        // Network drop or transient server error (5xx) → stop and retry later.
-        // Only genuine client errors (4xx) are permanent.
-        if (_isNetwork(e) || (status != null && status >= 500)) break;
-        await _store.markOpFailed(op.opId, e.message ?? 'request failed', op.attempts + 1);
+        // Network drop or transient server error → stop and retry later without
+        // burning an attempt or parking the op.
+        if (_isNetwork(e) || _isTransientStatus(status)) break;
+        await _failOrRetry(op, e.message ?? 'request failed');
       } on Failure catch (e) {
-        // Server rejected it (validation/permission). Permanent → mark failed.
-        await _store.markOpFailed(op.opId, e.message, op.attempts + 1);
+        // Responses with status < 500 surface here (DioClient validateStatus).
+        // A 401 (token refresh raced), 408, 409 (conflict) or 429 (rate-limit)
+        // is transient — retrying later usually succeeds, so don't park it.
+        // Other 4xx (400/403/404/422) are genuine client errors.
+        if (_isTransientStatus(e.statusCode)) break;
+        await _failOrRetry(op, e.message);
       } catch (e) {
         await _store.bumpOpAttempt(op.opId, e.toString(), op.attempts + 1);
         break;
@@ -319,15 +366,47 @@ class SyncEngine {
 
       final hasMore = data['hasMore'] == true;
       final nextSince = data['nextSince']?.toString();
-      if (hasMore && nextSince != null && nextSince != cursor) {
-        cursor = nextSince;
-        continue; // keep paginating
+      if (hasMore) {
+        if (nextSince != null && nextSince != cursor) {
+          cursor = nextSince;
+          continue; // advance the cursor and keep paginating
+        }
+        // The server still has more rows but the cursor can't advance (a
+        // page-boundary timestamp tie). Stop WITHOUT moving the high-water mark
+        // to serverTime — otherwise we'd mark ourselves caught-up past rows we
+        // never fetched and they'd never load. The next sync re-pulls this
+        // delta (idempotent upserts) and tries again.
+        break;
       }
+      // Fully drained — safe to commit the high-water mark.
       final serverTime = data['serverTime']?.toString();
       if (serverTime != null) await _store.db.metaSet(_lastSyncKey, serverTime);
       break;
     }
   }
+
+  /// Park the op as 'failed' only after it has genuinely been rejected
+  /// [_maxAttempts] times; otherwise just record the error and bump the
+  /// counter so the next cycle retries. This keeps a flaky-but-recoverable op
+  /// (a transient 4xx, a momentary conflict) from being abandoned forever.
+  Future<void> _failOrRetry(SyncQueueData op, String message) async {
+    final attempts = op.attempts + 1;
+    if (attempts >= _maxAttempts) {
+      await _store.markOpFailed(op.opId, message, attempts);
+    } else {
+      await _store.bumpOpAttempt(op.opId, message, attempts);
+    }
+  }
+
+  /// HTTP statuses that are worth retrying rather than treating as permanent:
+  /// 401 (auth refresh raced), 408 (timeout), 409 (conflict), 429 (rate limit),
+  /// and any 5xx.
+  bool _isTransientStatus(int? status) =>
+      status == 401 ||
+      status == 408 ||
+      status == 409 ||
+      status == 429 ||
+      (status != null && status >= 500);
 
   bool _isNetwork(DioException e) =>
       e.type == DioExceptionType.connectionError ||

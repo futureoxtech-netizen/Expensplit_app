@@ -111,17 +111,25 @@ class PaymentMethodTile extends StatelessWidget {
               ],
             ),
           ),
-          Column(
+          // Actions sit side-by-side at the top-right. Stacking them in a
+          // Column previously left the overflow menu floating below the copy
+          // button with a large gap (two 48px tap targets stacked).
+          Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               IconButton(
                 tooltip: 'Copy',
                 visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                 icon: const Icon(Icons.copy_rounded, size: 19),
                 onPressed: () => _copy(context),
               ),
               if (hasMenu)
                 PopupMenuButton<String>(
                   tooltip: 'More',
+                  padding: EdgeInsets.zero,
+                  iconSize: 19,
                   icon: const Icon(Icons.more_vert_rounded, size: 19),
                   onSelected: (v) {
                     if (v == 'edit') onEdit?.call();

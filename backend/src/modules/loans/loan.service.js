@@ -2,7 +2,26 @@ import { Loan } from './loan.model.js';
 import { LoanPayment } from './loan_payment.model.js';
 import { User } from '../users/user.model.js';
 import { notifyUser } from '../../services/notifications.service.js';
+import { activityService } from '../activity/activity.service.js';
+import { recordTombstone } from '../sync/tombstone.model.js';
 import { BadRequest, NotFound, Forbidden } from '../../utils/errors.js';
+
+// Record a loan event in the (group-less) activity feed for both parties so it
+// shows up alongside group activity. Recipients are the real app users involved
+// — guest counterparties aren't users, so only the creator sees guest loans.
+function logLoanActivity({ actor, recipients, type, message, loanId }) {
+  const ids = [...new Set(recipients.filter(Boolean).map((r) => r.toString()))];
+  if (!ids.length) return;
+  activityService
+    .log({
+      actor,
+      type,
+      message,
+      recipients: ids,
+      meta: { loanId: loanId.toString(), route: `/loans/${loanId.toString()}` },
+    })
+    .catch(() => {});
+}
 
 const POPULATE_USERS = [
   { path: 'lender', select: 'name email avatarUrl' },
@@ -68,6 +87,15 @@ export const loanService = {
         createdBy: creatorId,
         clientOpId: clientOpId ?? null,
       });
+      logLoanActivity({
+        actor: creatorId,
+        recipients: [creatorId],
+        type: 'loan.created',
+        message: isLender
+          ? `You lent ${guestCounterparty.name || 'a contact'} ${currency ?? 'PKR'} ${amount}.`
+          : `You borrowed ${currency ?? 'PKR'} ${amount} from ${guestCounterparty.name || 'a contact'}.`,
+        loanId: loan._id,
+      });
       return loanToJson(loan.toObject());
     }
 
@@ -126,6 +154,14 @@ export const loanService = {
       data: { loanId: loan._id.toString(), route: `/loans/${loan._id.toString()}` },
     });
 
+    logLoanActivity({
+      actor: creatorId,
+      recipients: [lenderId, borrowerId],
+      type: 'loan.pending_approval',
+      message: `${creatorUser.name} recorded a loan of ${currency ?? 'PKR'} ${amount}${description ? ` for "${description}"` : ''}.`,
+      loanId: loan._id,
+    });
+
     return loanToJson(populated);
   },
 
@@ -154,6 +190,14 @@ export const loanService = {
       data: { loanId: loanId.toString(), route: `/loans/${loanId.toString()}` },
     });
 
+    logLoanActivity({
+      actor: userId,
+      recipients: [lenderId, borrowerId],
+      type: 'loan.approved',
+      message: `${approver.name} confirmed the loan of ${loan.currency} ${loan.amount}.`,
+      loanId,
+    });
+
     return loanToJson(loan.toObject());
   },
 
@@ -180,6 +224,14 @@ export const loanService = {
       message: `${rejecter.name} rejected the loan request of ${loan.currency} ${loan.amount}.`,
       type: 'loan.rejected',
       data: { loanId: loanId.toString(), route: `/loans/${loanId.toString()}` },
+    });
+
+    logLoanActivity({
+      actor: userId,
+      recipients: [lenderId, borrowerId],
+      type: 'loan.rejected',
+      message: `${rejecter.name} rejected the loan request of ${loan.currency} ${loan.amount}.`,
+      loanId,
     });
 
     return loanToJson(loan.toObject());
@@ -229,6 +281,14 @@ export const loanService = {
       message: `${actor.name} recorded a payment of ${loan.currency} ${amount} on your loan.`,
       type: 'loan.payment',
       data: { loanId: loanId.toString(), route: `/loans/${loanId.toString()}` },
+    });
+
+    logLoanActivity({
+      actor: userId,
+      recipients: [lenderId, borrowerId],
+      type: 'loan.payment',
+      message: `${actor.name} recorded a payment of ${loan.currency} ${amount}.`,
+      loanId,
     });
 
     return payment;
@@ -281,6 +341,15 @@ export const loanService = {
     }
     loan.deletedAt = new Date();
     await loan.save();
+    // Tombstone so the OTHER party's device drops the loan too. Without this the
+    // delta sync just stops returning the (now deletedAt) loan, so the
+    // counterparty keeps a stale copy forever. Both parties are recipients; the
+    // creator's own device already hard-deleted it locally (a no-op there).
+    recordTombstone({
+      entityType: 'loan',
+      entityId: loan._id,
+      users: [loan.lender, loan.borrower].filter(Boolean),
+    }).catch(() => {});
     return { ok: true };
   },
 

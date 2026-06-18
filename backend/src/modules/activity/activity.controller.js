@@ -28,6 +28,7 @@ export const activityController = {
       Group.find({ 'pendingMembers.user': req.user.id }).distinct('_id'),
     ]);
     const data = await activityService.listForUser({
+      userId: req.user.id,
       groupIds,
       pendingGroupIds,
       page: Number(req.query.page) || 1,

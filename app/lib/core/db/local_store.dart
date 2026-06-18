@@ -397,6 +397,11 @@ class LocalStore {
         await (db.delete(db.loanPayments)..where((t) => t.loanId.equals(localLoan))).go();
         await (db.delete(db.loans)..where((t) => t.id.equals(localLoan))).go();
         break;
+      case 'guestContact':
+        await (db.delete(db.guestContacts)
+              ..where((t) => t.serverId.equals(id) | t.id.equals(id)))
+            .go();
+        break;
       case 'group':
         // Cascade: drop the group and everything under it (using its local id,
         // which may be a uuid for a group created offline then synced).
@@ -1448,23 +1453,60 @@ class LocalStore {
       (db.update(db.syncQueue)..where((t) => t.opId.equals(opId)))
           .write(SyncQueueCompanion(lastError: Value(error), attempts: Value(attempts)));
 
-  /// One-time self-heal for loans. Loan create/payment pushes used to be marked
-  /// permanently 'failed' because the server's success responses lacked the
-  /// `ok:true` envelope the client requires (now fixed) — that left an
-  /// un-synced orphan row beside the pulled server copy, i.e. a duplicate.
-  /// Resetting those ops to 'pending' re-drives them idempotently (they carry a
-  /// clientOpId), which stamps the orphan row's serverId so the read-side
-  /// de-dup collapses the duplicate. Safe to call on every startup: ops that
-  /// genuinely can't succeed simply fail again.
-  Future<int> requeueFailedLoanOps() =>
-      (db.update(db.syncQueue)
-            ..where((t) =>
-                t.status.equals('failed') &
-                t.entityType.isIn(['loan', 'loanPayment'])))
+  /// Revive every parked ('failed') op back to 'pending' so the next push cycle
+  /// re-drives it. Called on discrete recovery events (sync start, connectivity
+  /// regained, and before requireServerId retries) — NOT on every cycle — so a
+  /// genuinely-broken op can't spin. Each op carries a clientOpId, so re-driving
+  /// a create the server already accepted is idempotent. Returns rows revived.
+  ///
+  /// This is the general recovery path that stops an op parked by a transient
+  /// failure (e.g. a 401 whose token refresh raced, or a lost create response)
+  /// from blocking serverId resolution forever — the bug that surfaced as
+  /// "Bad state: this is still syncing" until the user logged out and back in.
+  Future<int> requeueFailedOps() =>
+      (db.update(db.syncQueue)..where((t) => t.status.equals('failed')))
           .write(const SyncQueueCompanion(
             status: Value('pending'),
             attempts: Value(0),
           ));
+
+  /// Whether the local row an op targets still exists (by local id), regardless
+  /// of its `deletedAt`/`dirty` state. Used by the push loop to drop ops whose
+  /// entity was hard-deleted out from under them (e.g. a group tombstone
+  /// cascade removed the expense a queued `expense:update` referred to). Without
+  /// this, such an op's serverId stays null forever, it keeps deferring, and —
+  /// because a defer breaks the FIFO push loop — it permanently stalls every op
+  /// queued behind it. Unknown/parent-less op types return true (never block).
+  Future<bool> entityRowExists(String entityType, String localId) async {
+    Future<bool> exists(String table) async {
+      final rows = await db
+          .customSelect('SELECT 1 FROM $table WHERE id = ? LIMIT 1',
+              variables: [Variable.withString(localId)])
+          .get();
+      return rows.isNotEmpty;
+    }
+
+    switch (entityType) {
+      case 'group':
+      case 'groupNotes':
+        return exists('groups');
+      case 'expense':
+        return exists('expenses');
+      case 'settlement':
+        return exists('settlements');
+      case 'personal':
+        return exists('personal_expenses');
+      case 'goal':
+        return exists('goals');
+      case 'loan':
+        return exists('loans');
+      case 'loanPayment':
+        return exists('loan_payments');
+      case 'guestContact':
+        return exists('guest_contacts');
+    }
+    return true;
+  }
 
   /// Resolve a local entity id to its server id (null if not yet synced).
   Future<String?> serverIdFor(String entityType, String localId) async {

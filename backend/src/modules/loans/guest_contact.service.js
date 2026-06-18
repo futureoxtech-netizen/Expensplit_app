@@ -1,4 +1,5 @@
 import { GuestContact } from './guest_contact.model.js';
+import { recordTombstone } from '../sync/tombstone.model.js';
 import { NotFound, Forbidden } from '../../utils/errors.js';
 
 export const guestContactService = {
@@ -35,6 +36,13 @@ export const guestContactService = {
     if (!gc) throw new NotFound('Guest contact not found');
     gc.deletedAt = new Date();
     await gc.save();
+    // Tombstone so the owner's OTHER devices drop the contact (the delta sync
+    // otherwise just stops returning it, leaving a stale local copy).
+    recordTombstone({
+      entityType: 'guestContact',
+      entityId: gc._id,
+      users: [ownerId],
+    }).catch(() => {});
   },
 
   async listForUser({ ownerId }) {

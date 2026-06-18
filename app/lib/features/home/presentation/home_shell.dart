@@ -19,15 +19,6 @@ class HomeShell extends ConsumerWidget {
   const HomeShell({super.key, required this.child});
   final Widget child;
 
-  // Primary destinations — kept to four so the More button can take
-  // the fifth slot without feeling crowded.
-  static const _primaryTabs = <_NavItem>[
-    _NavItem('/home', Icons.dashboard_rounded, 'Home'),
-    _NavItem('/groups', Icons.groups_rounded, 'Groups'),
-    _NavItem('/friends', Icons.people_alt_rounded, 'Friends'),
-    _NavItem('/tracker', Icons.track_changes_rounded, 'Tracker'),
-  ];
-
   // Routes that should show "More" as the selected tab.
   static const _secondaryRoutes = <String>{
     '/goals',
@@ -37,18 +28,29 @@ class HomeShell extends ConsumerWidget {
     '/reports',
   };
 
-  int _indexOfLocation(String loc) {
-    for (var i = 0; i < _primaryTabs.length; i++) {
-      if (loc.startsWith(_primaryTabs[i].path)) return i;
+  int _indexOfLocation(String loc, List<_NavItem> primaryTabs) {
+    for (var i = 0; i < primaryTabs.length; i++) {
+      if (loc.startsWith(primaryTabs[i].path)) return i;
     }
-    if (_secondaryRoutes.any(loc.startsWith)) return _primaryTabs.length;
+    if (_secondaryRoutes.any(loc.startsWith)) return primaryTabs.length;
     return 0;
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final location = GoRouterState.of(context).matchedLocation;
-    final index = _indexOfLocation(location);
+    final modules = ref.watch(enabledModulesProvider);
+    // Primary destinations — Home/Groups/Friends are always present; the
+    // Personal Tracker tab only shows when its module is enabled. The "More"
+    // button takes the final slot.
+    final primaryTabs = <_NavItem>[
+      const _NavItem('/home', Icons.dashboard_rounded, 'Home'),
+      const _NavItem('/groups', Icons.groups_rounded, 'Groups'),
+      const _NavItem('/friends', Icons.people_alt_rounded, 'Friends'),
+      if (modules.contains(AppModule.tracker))
+        const _NavItem('/tracker', Icons.track_changes_rounded, 'Tracker'),
+    ];
+    final index = _indexOfLocation(location, primaryTabs);
     final unread = ref.watch(unreadActivityProvider);
     // Pending group-invite count → badge on the Groups tab for discoverability.
     final inviteCount = ref.watch(myInvitesProvider).maybeWhen(
@@ -75,14 +77,14 @@ class HomeShell extends ConsumerWidget {
           height: 70,
           selectedIndex: index,
           onDestinationSelected: (i) {
-            if (i < _primaryTabs.length) {
-              context.go(_primaryTabs[i].path);
+            if (i < primaryTabs.length) {
+              context.go(primaryTabs[i].path);
             } else {
               _showMoreSheet(context, ref, location);
             }
           },
           destinations: [
-            for (final t in _primaryTabs)
+            for (final t in primaryTabs)
               NavigationDestination(
                 icon: _Badged(
                   count: t.path == '/groups' ? inviteCount : 0,
@@ -141,6 +143,7 @@ class _MoreSheet extends ConsumerWidget {
     final unread = ref.watch(unreadActivityProvider);
     final loansPending = ref.watch(pendingApprovalCountProvider);
     final mode = ref.watch(themeModeProvider);
+    final modules = ref.watch(enabledModulesProvider);
     final cs = Theme.of(context).colorScheme;
 
     return Container(
@@ -220,27 +223,29 @@ class _MoreSheet extends ConsumerWidget {
               shrinkWrap: true,
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               children: [
-                _MoreTile(
-                  icon: Icons.flag_rounded,
-                  label: 'Goals',
-                  subtitle: 'Track savings and spend targets',
-                  selected: currentLoc.startsWith('/goals'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    context.go('/goals');
-                  },
-                ),
-                _MoreTile(
-                  icon: Icons.account_balance_wallet_rounded,
-                  label: 'Khata Book',
-                  subtitle: 'Track personal loans & dues',
-                  selected: currentLoc.startsWith('/loans'),
-                  badgeCount: loansPending,
-                  onTap: () {
-                    Navigator.pop(context);
-                    context.go('/loans');
-                  },
-                ),
+                if (modules.contains(AppModule.goals))
+                  _MoreTile(
+                    icon: Icons.flag_rounded,
+                    label: 'Goals',
+                    subtitle: 'Track savings and spend targets',
+                    selected: currentLoc.startsWith('/goals'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.go('/goals');
+                    },
+                  ),
+                if (modules.contains(AppModule.khata))
+                  _MoreTile(
+                    icon: Icons.account_balance_wallet_rounded,
+                    label: 'Khata Book',
+                    subtitle: 'Track personal loans & dues',
+                    selected: currentLoc.startsWith('/loans'),
+                    badgeCount: loansPending,
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.go('/loans');
+                    },
+                  ),
                 _MoreTile(
                   icon: Icons.notifications_rounded,
                   label: 'Activity',
@@ -252,18 +257,29 @@ class _MoreSheet extends ConsumerWidget {
                     context.go('/activity');
                   },
                 ),
-                _MoreTile(
-                  icon: Icons.insights_rounded,
-                  label: 'Reports',
-                  subtitle: 'Monthly insights and category breakdown',
-                  selected: currentLoc.startsWith('/reports'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    context.push('/reports');
-                  },
-                ),
+                if (modules.contains(AppModule.reports))
+                  _MoreTile(
+                    icon: Icons.insights_rounded,
+                    label: 'Reports',
+                    subtitle: 'Monthly insights and category breakdown',
+                    selected: currentLoc.startsWith('/reports'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.push('/reports');
+                    },
+                  ),
                 const SizedBox(height: 8),
                 _SectionLabel('Preferences'),
+                _MoreTile(
+                  icon: Icons.tune_rounded,
+                  label: 'Modules',
+                  subtitle: 'Turn features on or off',
+                  selected: currentLoc.startsWith('/settings/modules'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    context.push('/settings/modules');
+                  },
+                ),
                 _MoreTile(
                   icon: Icons.person_rounded,
                   label: 'Profile & settings',

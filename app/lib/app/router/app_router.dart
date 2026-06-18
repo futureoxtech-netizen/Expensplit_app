@@ -21,6 +21,7 @@ import '../../features/expenses/data/expense_model.dart';
 import '../../features/auth/data/user_model.dart';
 import '../../features/activity/presentation/activity_screen.dart';
 import '../../features/reports/presentation/reports_screen.dart';
+import '../../features/settings/presentation/module_settings_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../features/profile/presentation/edit_profile_screen.dart';
 import '../../features/profile/presentation/change_password_screen.dart';
@@ -156,6 +157,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(path: '/expenses/all', builder: (_, __) => const AllGroupsFeedScreen()),
+      GoRoute(path: '/settings/modules', builder: (_, __) => const ModuleSettingsScreen()),
       GoRoute(
         path: '/groups/:id',
         builder: (_, s) => GroupDetailScreen(groupId: s.pathParameters['id']!),

@@ -90,7 +90,11 @@ class PersonalExpenseRepository {
     if (amount != null) fields['amount'] = amount;
     if (currency != null) fields['currency'] = currency;
     if (category != null) fields['category'] = category;
-    if (date != null) fields['date'] = date.toIso8601String();
+    // Must be UTC (with a trailing Z). A bare local-time toIso8601String() is
+    // re-read by the server as UTC and drifts +tz-offset on every edit, rolling
+    // the expense onto the next day. Matches create()'s _iso(). See memory
+    // project-date-convention.
+    if (date != null) fields['date'] = date.toUtc().toIso8601String();
     if (note != null) fields['note'] = note;
     if (receiptUrl != null) fields['receiptUrl'] = receiptUrl;
     await _store.updatePersonalLocal(id, fields);

@@ -691,6 +691,19 @@ export const groupService = {
         type: 'group.deleted',
         data: {},
       }).catch(() => {});
+      // Leave a permanent trace in each remaining member's activity feed. This
+      // activity is deliberately NOT tied to the (now purged) group — a
+      // group-scoped activity would be cascade-deleted by the tombstone above —
+      // so it's recipient-scoped instead and survives the deletion.
+      activityService
+        .log({
+          actor: userId,
+          type: 'group.deleted',
+          message: `${actor} deleted the group "${name}".`,
+          recipients: otherMemberIds,
+          meta: { groupName: name },
+        })
+        .catch(() => {});
     }
 
     return { deleted: true, name };

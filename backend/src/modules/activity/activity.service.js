@@ -3,14 +3,14 @@ import { emitToGroup, emitToUsers } from '../../socket/index.js';
 import { Group } from '../groups/group.model.js';
 
 export const activityService = {
-  async log({ groupId, actor, type, message, meta = {} }) {
-    const item = await Activity.create({ group: groupId, actor, type, message, meta });
+  async log({ groupId, actor, type, message, meta = {}, recipients = [] }) {
+    const item = await Activity.create({ group: groupId, actor, type, message, meta, recipients });
+    const payload = {
+      activityId: item._id.toString(),
+      type,
+      ...(groupId ? { groupId: groupId.toString() } : {}),
+    };
     if (groupId) {
-      const payload = {
-        groupId: groupId.toString(),
-        activityId: item._id.toString(),
-        type,
-      };
       // The `group:<id>` room only contains clients that are currently
       // viewing this group. Also fan out to every member's personal
       // `user:<id>` room so the global activity feed / unread badge
@@ -26,6 +26,11 @@ export const activityService = {
       } catch {
         // Non-fatal — group-room emit above already covers active viewers.
       }
+    }
+    // Recipient-scoped activities (loans, group-deleted) have no group room, so
+    // fan out directly to each recipient's personal room.
+    if (recipients.length) {
+      emitToUsers(recipients, 'activity:new', payload);
     }
     return item;
   },
@@ -44,14 +49,17 @@ export const activityService = {
     return { items, total, page, limit, hasMore: skip + items.length < total };
   },
 
-  async listForUser({ groupIds, pendingGroupIds = [], page = 1, limit = 50 }) {
+  async listForUser({ userId, groupIds, pendingGroupIds = [], page = 1, limit = 50 }) {
     const skip = (page - 1) * limit;
     // Build a query that includes:
     //  • All activities from groups the user is a full member of.
+    //  • Recipient-scoped activities addressed directly to the user (loan
+    //    events, "group deleted" trace) which have no group.
     //  • Only group.invite activities from groups where the user has a pending
     //    invite — so they can see the invitation in their Activity feed without
     //    seeing unrelated group activity they haven't been accepted into yet.
     const orClauses = [{ group: { $in: groupIds } }];
+    if (userId) orClauses.push({ recipients: userId });
     if (pendingGroupIds.length) {
       // Only surface group.invite activities from groups where the user is
       // pending — they must not see other activity (expenses, balances, etc.)

@@ -293,11 +293,17 @@ class AppDatabase extends _$AppDatabase {
         onUpgrade: (m, from, to) async {
           if (from < 2) await m.createTable(reactions);
           if (from < 3) {
+            // createTable builds from the *current* table definition, so the
+            // guestContacts created here already has serverId/dirty/deletedAt.
             await m.createTable(guestContacts);
             await m.createTable(loans);
             await m.createTable(loanPayments);
           }
-          if (from < 4) {
+          // Only a database that was actually at schema 3 has the *old*
+          // guestContacts table that lacks these columns. Running addColumn for
+          // a from<3 upgrade would hit "duplicate column name" (createTable
+          // above already added them) and crash the app on update.
+          if (from == 3) {
             await m.addColumn(guestContacts, guestContacts.serverId);
             await m.addColumn(guestContacts, guestContacts.dirty);
             await m.addColumn(guestContacts, guestContacts.deletedAt);

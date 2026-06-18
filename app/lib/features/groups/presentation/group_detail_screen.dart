@@ -1074,6 +1074,17 @@ class _MembersTab extends ConsumerWidget {
                     icon: Icon(Icons.close_rounded,
                         size: 18, color: cs.onSurface.withOpacity(0.5)),
                     onPressed: () => _removeMember(context, ref, m),
+                  )
+                // An admin/owner can remove other real members — but not the
+                // owner and not themselves (they use "Leave group" instead).
+                // The server re-enforces these rules and that balances are settled.
+                else if (canManage && m.user.id != me?.id && m.role != 'owner')
+                  IconButton(
+                    tooltip: 'Remove member',
+                    visualDensity: VisualDensity.compact,
+                    icon: Icon(Icons.person_remove_rounded,
+                        size: 18, color: cs.onSurface.withOpacity(0.5)),
+                    onPressed: () => _removeMember(context, ref, m),
                   ),
               ],
             ),
@@ -1235,14 +1246,19 @@ class _MembersTab extends ConsumerWidget {
 
   Future<void> _removeMember(
       BuildContext context, WidgetRef ref, GroupMember m) async {
+    final isGuest = m.user.isPlaceholder;
+    final who = m.user.name.isEmpty ? (isGuest ? 'this guest' : 'this member') : m.user.name;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Remove guest?'),
+        title: Text(isGuest ? 'Remove guest?' : 'Remove member?'),
         content: Text(
-          'Remove ${m.user.name.isEmpty ? 'this guest' : m.user.name} from "${group.name}"? '
-          'This is only possible while they have no expenses in the group.',
+          isGuest
+              ? 'Remove $who from "${group.name}"? '
+                  'This is only possible while they have no expenses in the group.'
+              : 'Remove $who from "${group.name}"? They\'ll lose access to this group. '
+                  'This is only possible once their balance is settled.',
         ),
         actions: [
           TextButton(
@@ -1261,10 +1277,14 @@ class _MembersTab extends ConsumerWidget {
       await ref.read(groupRepositoryProvider).removeMember(group.id, m.user.id);
       ref.invalidate(groupDetailProvider(group.id));
       ref.invalidate(groupBalancesProvider(group.id));
-      if (context.mounted) showSuccessSnack(context, 'Guest removed');
+      if (context.mounted) {
+        showSuccessSnack(context, isGuest ? 'Guest removed' : 'Member removed');
+      }
     } catch (e) {
-      if (context.mounted)
-        showErrorSnack(context, e, fallback: 'Could not remove guest');
+      if (context.mounted) {
+        showErrorSnack(context, e,
+            fallback: isGuest ? 'Could not remove guest' : 'Could not remove member');
+      }
     }
   }
 

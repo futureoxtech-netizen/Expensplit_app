@@ -21,6 +21,7 @@ import '../../groups/data/friend_summary_model.dart';
 import '../../groups/providers/group_providers.dart';
 import '../../personal/data/personal_expense_model.dart';
 import '../../personal/providers/personal_providers.dart';
+import '../../settings/settings_providers.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -175,19 +176,33 @@ class DashboardScreen extends ConsumerWidget {
             const SizedBox(height: 8),
             feedAsync.when(
               data: (page) {
-                if (page.items.isEmpty) {
+                // Merge group expenses with this month's personal expenses so
+                // the dashboard's "recent" list reflects everything the user
+                // spent, not only group activity. Personal folds in only once
+                // loaded; the group feed drives the section's loading/error.
+                final trackerOn =
+                    ref.watch(enabledModulesProvider).contains(AppModule.tracker);
+                final entries = <_RecentEntry>[
+                  for (final e in page.items) _RecentEntry.group(e),
+                  if (trackerOn)
+                    ...personalAsync.maybeWhen(
+                      data: (list) => list.map(_RecentEntry.personal),
+                      orElse: () => const <_RecentEntry>[],
+                    ),
+                ]..sort((a, b) => b.date.compareTo(a.date));
+                if (entries.isEmpty) {
                   return const EmptyState(
                     icon: Icons.receipt_long_outlined,
                     title: 'No expenses yet',
-                    subtitle: 'Add your first expense in a group to see it here.',
+                    subtitle: 'Add an expense in a group or your personal tracker to see it here.',
                   );
                 }
                 return Column(
                   children: [
-                    for (final e in page.items.take(5))
+                    for (final entry in entries.take(5))
                       Padding(
                         padding: const EdgeInsets.only(bottom: 10),
-                        child: _ExpenseTile(expense: e),
+                        child: _RecentTile(entry: entry),
                       ),
                   ],
                 );
@@ -623,16 +638,58 @@ class _GroupCard extends StatelessWidget {
   }
 }
 
-class _ExpenseTile extends StatelessWidget {
-  const _ExpenseTile({required this.expense});
-  final ExpenseModel expense;
+/// A unified row for the dashboard "Recent expenses" list — either a group
+/// expense or a personal-tracker expense.
+class _RecentEntry {
+  const _RecentEntry({
+    required this.category,
+    required this.title,
+    required this.subtitle,
+    required this.amount,
+    required this.currency,
+    required this.date,
+    required this.route,
+  });
+
+  final String category;
+  final String title;
+  final String subtitle;
+  final double amount;
+  final String currency;
+  final DateTime date;
+  final String route;
+
+  factory _RecentEntry.group(ExpenseModel e) => _RecentEntry(
+        category: e.category,
+        title: e.description,
+        subtitle: '${e.paidBy.name} · ${e.groupName ?? ''}',
+        amount: e.amount,
+        currency: e.currency,
+        date: e.spentAt,
+        route: '/expenses/${e.id}',
+      );
+
+  factory _RecentEntry.personal(PersonalExpenseModel p) => _RecentEntry(
+        category: p.category,
+        title: p.description,
+        subtitle: 'Personal',
+        amount: p.amount,
+        currency: p.currency,
+        date: p.date,
+        route: '/tracker',
+      );
+}
+
+class _RecentTile extends StatelessWidget {
+  const _RecentTile({required this.entry});
+  final _RecentEntry entry;
 
   @override
   Widget build(BuildContext context) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () => GoRouter.of(context).push('/expenses/${expense.id}'),
+        onTap: () => GoRouter.of(context).push(entry.route),
         borderRadius: BorderRadius.circular(20),
         child: Container(
           padding: const EdgeInsets.all(14),
@@ -643,17 +700,21 @@ class _ExpenseTile extends StatelessWidget {
           ),
           child: Row(
             children: [
-              CategoryIcon(category: expense.category),
+              CategoryIcon(category: entry.category),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(expense.description,
+                    Text(entry.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
                     const SizedBox(height: 2),
                     Text(
-                      '${expense.paidBy.name} · ${expense.groupName ?? ''}',
+                      entry.subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 12,
                         color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
@@ -666,12 +727,12 @@ class _ExpenseTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    Money.format(expense.amount, code: expense.currency),
+                    Money.format(entry.amount, code: entry.currency),
                     style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    DateFmt.relative(expense.spentAt),
+                    DateFmt.relative(entry.date),
                     style: TextStyle(
                       fontSize: 11,
                       color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),

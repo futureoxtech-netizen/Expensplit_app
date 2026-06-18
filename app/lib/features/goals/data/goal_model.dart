@@ -22,7 +22,7 @@ class ContributionModel {
   Map<String, dynamic> toJson() => {
         'amount': amount,
         'note': note,
-        'date': date.toIso8601String(),
+        'date': date.toUtc().toIso8601String(),
       };
 }
 

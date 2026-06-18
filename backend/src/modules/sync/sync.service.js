@@ -66,7 +66,12 @@ export const syncService = {
           .lean(),
         PersonalExpense.find({ user: userId, ...changedSince() }).sort({ updatedAt: 1 }).limit(page).lean(),
         Goal.find({ user: userId, ...changedSince() }).sort({ updatedAt: 1 }).limit(page).lean(),
-        Activity.find({ group: { $in: allGroupIds }, ...changedSince('createdAt') })
+        Activity.find({
+          $and: [
+            { $or: [{ group: { $in: allGroupIds } }, { recipients: userId }] },
+            changedSince('createdAt'),
+          ],
+        })
           .populate('actor', 'name avatarUrl')
           .populate('group', 'name coverColor')
           .sort({ createdAt: 1 })

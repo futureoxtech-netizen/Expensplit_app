@@ -4,19 +4,30 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/error_messages.dart';
+import '../../../core/sync/sync_engine.dart';
 import '../../../core/utils/formatters.dart';
 import '../data/loan_model.dart';
 import '../providers/loan_providers.dart';
 import 'add_payment_sheet.dart';
 import 'loans_screen.dart';
 
-class LoanDetailScreen extends ConsumerWidget {
+class LoanDetailScreen extends ConsumerStatefulWidget {
   const LoanDetailScreen({super.key, required this.loanId});
   final String loanId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final loanAsync = ref.watch(loanDetailProvider(loanId));
+  ConsumerState<LoanDetailScreen> createState() => _LoanDetailScreenState();
+}
+
+class _LoanDetailScreenState extends ConsumerState<LoanDetailScreen> {
+  // True once we've forced a sync for a loan that wasn't on this device yet
+  // (e.g. opened from a push notification before the delta pull arrived). We
+  // only show "not found" *after* that sync has had a chance to fetch it.
+  bool _syncAttempted = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final loanAsync = ref.watch(loanDetailProvider(widget.loanId));
 
     return loanAsync.when(
       loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
@@ -26,9 +37,47 @@ class LoanDetailScreen extends ConsumerWidget {
       ),
       data: (loan) {
         if (loan == null) {
+          if (!_syncAttempted) {
+            // Pull from the server once, then re-evaluate. If the loan exists
+            // (a deep link from a notification), the provider's stream will emit
+            // it and rebuild this screen automatically; otherwise we fall
+            // through to the friendly "not found" state below.
+            _syncAttempted = true;
+            SyncEngine.instance.sync().whenComplete(() {
+              if (mounted) setState(() {});
+            });
+            return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          }
           return Scaffold(
             appBar: AppBar(),
-            body: const Center(child: Text('Loan not found')),
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.search_off_rounded,
+                        size: 56, color: Theme.of(context).disabledColor),
+                    const SizedBox(height: 12),
+                    const Text('Loan not found',
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
+                    const SizedBox(height: 6),
+                    Text(
+                      "It may have been deleted, or it hasn't synced to this device yet.",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: () => context.canPop() ? context.pop() : context.go('/loans'),
+                      child: const Text('Back to loans'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           );
         }
         return _LoanDetailBody(loan: loan);
@@ -243,11 +292,21 @@ class _LoanDetailBody extends ConsumerWidget {
           ),
         );
         if (confirm == true && context.mounted) {
+          // Leave the detail screen FIRST, then delete. The delete soft-removes
+          // the loan locally, which makes loanDetailProvider emit null — if we
+          // were still on this screen it would flash "Loan not found". Capture
+          // the repo before popping so we don't read a disposed ref afterward.
+          final repo = ref.read(loanRepositoryProvider);
+          if (context.canPop()) {
+            context.pop();
+          } else {
+            context.go('/loans');
+          }
           try {
-            await ref.read(loanRepositoryProvider).deleteLoan(loan.id);
-            if (context.mounted) context.pop();
-          } catch (e) {
-            if (context.mounted) showErrorSnack(context, e);
+            await repo.deleteLoan(loan.id);
+          } catch (_) {
+            // Local delete + queued sync rarely fails; the screen is already
+            // gone so there's no context to surface an error on.
           }
         }
         break;
