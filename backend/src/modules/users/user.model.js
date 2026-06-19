@@ -32,6 +32,15 @@ const userSchema = new mongoose.Schema(
     // Saved payment methods, surfaced on the Profile → Payment information screen.
     paymentMethods: { type: [paymentMethodSchema], default: [] },
     refreshTokens: { type: [String], default: [], select: false },
+    // Refresh tokens that were just rotated out, kept valid for a short grace
+    // window. Lets a client that never received the rotation response (dropped
+    // network, app killed mid-refresh) retry with its old token once instead of
+    // being force-logged-out. See auth.service.refresh.
+    recentlyRotated: {
+      type: [{ token: String, expiresAt: Date }],
+      default: [],
+      select: false,
+    },
     fcmTokens: { type: [String], default: [] },
     // OneSignal subscription / player IDs registered by every device this
     // user signs into. Used as a fallback target if external_id routing

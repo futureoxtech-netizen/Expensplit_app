@@ -1905,11 +1905,15 @@ class LocalStore {
   Future<void> deleteLoanLocal(String id) async {
     await (db.update(db.loans)..where((t) => t.id.equals(id)))
         .write(LoansCompanion(deletedAt: Value(DateTime.now()), dirty: const Value(true)));
-    // Find serverId to enqueue delete.
-    final loan = await (db.select(db.loans)..where((t) => t.id.equals(id))).getSingleOrNull();
-    if (loan?.serverId != null) {
-      await enqueue(entityType: 'loan', opType: 'delete', entityLocalId: id, payload: {});
-    }
+    // Always enqueue the delete — even for a loan created offline that hasn't
+    // synced yet (serverId still null). FIFO guarantees the loan's create op
+    // pushes first (stamping a serverId), then this delete resolves it and
+    // removes the row server-side. Skipping the enqueue when serverId was null
+    // let the queued create still push, orphaning a "zombie" loan on the server
+    // that nothing ever deleted. The delete-op push is a no-op server-side if
+    // the create never succeeded (serverId stays null → it just hard-deletes
+    // locally), so this is safe in every ordering.
+    await enqueue(entityType: 'loan', opType: 'delete', entityLocalId: id, payload: {});
   }
 
   // ── LOAN PAYMENTS ──────────────────────────────────────────────────────────
@@ -1934,8 +1938,14 @@ class LocalStore {
           dirty: const Value(true),
         ));
     await updateLoanPaidAmountLocal(loanId);
-    // Queue server sync for all loans that have been synced (both user and guest).
-    if (loan != null && loan.serverId != null) {
+    // Always queue the payment for sync once the loan row exists. If the parent
+    // loan hasn't been pushed yet (serverId still null — e.g. the loan was just
+    // created offline), the push *defers* and retries on the next cycle once the
+    // loan's create has synced and stamped a serverId. Gating the enqueue on
+    // `loan.serverId != null` here used to silently drop the payment: it was
+    // never queued, so it never reached the server and was lost on logout/wipe
+    // or never seen on another device.
+    if (loan != null) {
       await enqueue(
         opId: opId,
         entityType: 'loanPayment',
@@ -1980,7 +1990,13 @@ class LocalStore {
           .go();
       await (db.delete(db.loanPayments)..where((t) => t.id.equals(paymentId))).go();
     } else {
-      // Guest (local-only) loan — nothing to sync, just remove it.
+      // Parent loan not yet synced (or payment row already gone). The payment
+      // may have a queued create op (we now always enqueue payments) — cancel it
+      // so it never reaches the server, then hard-delete the local row.
+      await (db.delete(db.syncQueue)
+            ..where((t) =>
+                t.entityType.equals('loanPayment') & t.entityLocalId.equals(paymentId)))
+          .go();
       await (db.delete(db.loanPayments)..where((t) => t.id.equals(paymentId))).go();
     }
     await updateLoanPaidAmountLocal(loanId);

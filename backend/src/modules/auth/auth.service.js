@@ -18,11 +18,25 @@ const DELETION_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 
 const referralCode = () => uuid().replace(/-/g, '').slice(0, 8).toUpperCase();
 
+// How long a just-rotated refresh token stays usable so a client that never
+// received the rotation response can recover when it next comes online —
+// including after being backgrounded/killed and reopened later, not just an
+// immediate retry. Bounded so a leaked rotated token can't be replayed forever.
+const ROTATION_GRACE_MS = 24 * 60 * 60 * 1000; // 24h
+// Cap on retained grace tokens. Shared across a user's devices, so kept well
+// above MAX_SESSIONS so a busy second device's rotations can't evict the grace
+// entry a stuck device still needs.
+const MAX_GRACE = 50;
+// Max concurrent sessions (devices) per user. Rotation is net-zero per device;
+// each distinct login adds one. Kept generous so a user with several devices /
+// reinstalls isn't silently evicted (which surfaces as a surprise logout).
+const MAX_SESSIONS = 10;
+
 async function buildSession(user) {
   const payload = { sub: user._id.toString(), email: user.email };
   const accessToken = signAccess(payload);
   const refreshToken = signRefresh({ ...payload, jti: uuid() });
-  user.refreshTokens = [...(user.refreshTokens || []), refreshToken].slice(-5);
+  user.refreshTokens = [...(user.refreshTokens || []), refreshToken].slice(-MAX_SESSIONS);
   await user.save();
   return { accessToken, refreshToken };
 }
@@ -197,6 +211,7 @@ export const authService = {
 
     user.passwordHash = await bcrypt.hash(newPassword, 10);
     user.refreshTokens = []; // invalidate all active sessions
+    user.recentlyRotated = []; // ...including any in-grace rotated tokens
     await user.save();
     return { message: 'Password updated successfully' };
   },
@@ -272,11 +287,33 @@ export const authService = {
     } catch {
       throw Unauthorized('Invalid refresh token');
     }
-    const user = await User.findById(decoded.sub).select('+refreshTokens');
-    if (!user || !user.refreshTokens.includes(refreshToken)) {
+    const user = await User.findById(decoded.sub).select('+refreshTokens +recentlyRotated');
+    if (!user) throw Unauthorized('Refresh token revoked');
+
+    const now = Date.now();
+    // Drop expired grace entries up front so the list can't grow unbounded.
+    const grace = (user.recentlyRotated || []).filter(
+      (r) => r.expiresAt && new Date(r.expiresAt).getTime() > now,
+    );
+
+    const isCurrent = user.refreshTokens.includes(refreshToken);
+    const inGrace = grace.some((r) => r.token === refreshToken);
+    // Accept the token if it's an active session OR was just rotated out within
+    // the grace window (a retried refresh after a lost response). Anything else
+    // is genuinely revoked/replayed/expired → the client should re-authenticate.
+    if (!isCurrent && !inGrace) {
       throw Unauthorized('Refresh token revoked');
     }
-    user.refreshTokens = user.refreshTokens.filter((t) => t !== refreshToken);
+
+    if (isCurrent) {
+      // Normal rotation: retire this token but keep it usable briefly in case
+      // the client never sees the response we're about to send.
+      user.refreshTokens = user.refreshTokens.filter((t) => t !== refreshToken);
+      grace.push({ token: refreshToken, expiresAt: new Date(now + ROTATION_GRACE_MS) });
+    }
+    // Cap the grace list (defensive) and persist via buildSession's save.
+    user.recentlyRotated = grace.slice(-MAX_GRACE);
+
     const tokens = await buildSession(user);
     return { user: user.toPublic(), ...tokens };
   },

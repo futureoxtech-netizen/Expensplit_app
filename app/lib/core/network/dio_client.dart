@@ -167,6 +167,12 @@ class _AuthInterceptor extends Interceptor {
       final res = await Dio(BaseOptions(
         baseUrl: ApiConstants.apiV1,
         validateStatus: (s) => s != null && s < 500,
+        // Bound the refresh so a hung request can't block every awaiting call
+        // forever. A timeout surfaces as a DioException → transient → we keep
+        // the session and retry later rather than force-logging-out.
+        connectTimeout: const Duration(seconds: 8),
+        receiveTimeout: const Duration(seconds: 8),
+        sendTimeout: const Duration(seconds: 8),
       )).post('/auth/refresh', data: {'refreshToken': refresh});
       final data = res.data;
       if (res.statusCode == 200 && data is Map && data['ok'] == true) {

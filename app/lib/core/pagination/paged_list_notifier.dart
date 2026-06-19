@@ -85,13 +85,22 @@ class PagedListNotifier<T> extends StateNotifier<PagedListState<T>> {
 
   bool _inFlight = false;
 
+  // Bumped by [refresh] (which force-resets [_inFlight] and the state). A fetch
+  // captures the epoch at the start of its await; if [refresh] has bumped it by
+  // the time the fetch resolves, the result is stale and must NOT be written —
+  // otherwise a loadMore that was in flight when the user pulled-to-refresh
+  // appends an old page onto the freshly-reset list and corrupts pagination.
+  int _epoch = 0;
+
   Future<void> loadFirst() async {
     if (_inFlight) return;
     if (state.items != null && !state.isLoadingFirst) return;
     _inFlight = true;
+    final epoch = _epoch;
     state = state.copyWith(isLoadingFirst: true, clearError: true);
     try {
       final res = await fetcher(1, limit);
+      if (epoch != _epoch) return; // superseded by a refresh
       state = state.copyWith(
         items: res.items,
         page: 1,
@@ -100,9 +109,10 @@ class PagedListNotifier<T> extends StateNotifier<PagedListState<T>> {
         clearError: true,
       );
     } catch (e) {
+      if (epoch != _epoch) return;
       state = state.copyWith(isLoadingFirst: false, error: e);
     } finally {
-      _inFlight = false;
+      if (epoch == _epoch) _inFlight = false;
     }
   }
 
@@ -111,10 +121,12 @@ class PagedListNotifier<T> extends StateNotifier<PagedListState<T>> {
     if (!state.hasMore) return;
     if (state.items == null) return; // first load hasn't finished
     _inFlight = true;
+    final epoch = _epoch;
     state = state.copyWith(isLoadingMore: true, clearError: true);
     try {
       final next = state.page + 1;
       final res = await fetcher(next, limit);
+      if (epoch != _epoch) return; // superseded by a refresh
       state = state.copyWith(
         items: [...?state.items, ...res.items],
         page: next,
@@ -123,9 +135,10 @@ class PagedListNotifier<T> extends StateNotifier<PagedListState<T>> {
         clearError: true,
       );
     } catch (e) {
+      if (epoch != _epoch) return;
       state = state.copyWith(isLoadingMore: false, error: e);
     } finally {
-      _inFlight = false;
+      if (epoch == _epoch) _inFlight = false;
     }
   }
 
@@ -134,6 +147,9 @@ class PagedListNotifier<T> extends StateNotifier<PagedListState<T>> {
   /// is in flight, because [loadFirst] will short-circuit if state hasn't
   /// been reset yet, so we clear first.
   Future<void> refresh() async {
+    // Invalidate any in-flight loadFirst/loadMore so its result is discarded
+    // instead of being written onto the freshly-reset list.
+    _epoch++;
     _inFlight = false;
     state = PagedListState<T>();
     await loadFirst();
@@ -146,9 +162,11 @@ class PagedListNotifier<T> extends StateNotifier<PagedListState<T>> {
   Future<void> softRefresh() async {
     if (_inFlight) return;
     _inFlight = true;
+    final epoch = _epoch;
     try {
       final pages = state.page < 1 ? 1 : state.page;
       final res = await fetcher(1, limit * pages);
+      if (epoch != _epoch) return; // superseded by a refresh
       state = state.copyWith(
         items: res.items,
         page: pages,
@@ -160,7 +178,7 @@ class PagedListNotifier<T> extends StateNotifier<PagedListState<T>> {
     } catch (_) {
       // Keep the existing items on a refresh failure — don't blank the screen.
     } finally {
-      _inFlight = false;
+      if (epoch == _epoch) _inFlight = false;
     }
   }
 

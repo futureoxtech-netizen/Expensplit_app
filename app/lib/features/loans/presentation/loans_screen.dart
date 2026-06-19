@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_colors.dart';
+import '../../../core/sync/sync_engine.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../features/auth/providers/auth_provider.dart';
 import '../data/loan_model.dart';
@@ -196,23 +197,52 @@ class _LoanList extends ConsumerWidget {
       async_ = ref.watch(takenLoansProvider);
     }
 
-    return async_.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('Error: $e')),
-      data: (loans) {
-        if (loans.isEmpty) {
-          return _EmptyLoanState(type: type, filter: filter);
-        }
-        return ListView.separated(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
-          itemCount: loans.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 10),
-          itemBuilder: (ctx, i) => _LoanCard(
-            loan: loans[i],
-            onTap: () => ctx.push('/loans/${loans[i].id}'),
-          ),
-        );
-      },
+    // Pull-to-refresh drives a full sync cycle. The error/empty states are made
+    // scrollable so the pull gesture works even when the list has no rows.
+    return RefreshIndicator(
+      color: AppColors.primary,
+      onRefresh: () => SyncEngine.instance.sync(),
+      child: async_.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => _ScrollableCenter(
+          child: _EmptyLoanState.error(),
+        ),
+        data: (loans) {
+          if (loans.isEmpty) {
+            return _ScrollableCenter(child: _EmptyLoanState(type: type, filter: filter));
+          }
+          return ListView.separated(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+            itemCount: loans.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 10),
+            itemBuilder: (ctx, i) => _LoanCard(
+              loan: loans[i],
+              onTap: () => ctx.push('/loans/${loans[i].id}'),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Centers [child] inside an always-scrollable viewport so a [RefreshIndicator]
+/// can still be pulled when the underlying list is empty or errored.
+class _ScrollableCenter extends StatelessWidget {
+  const _ScrollableCenter({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: Center(child: child),
+        ),
+      ),
     );
   }
 }
@@ -269,6 +299,12 @@ class _LoanCard extends StatelessWidget {
                             ),
                             const SizedBox(width: 6),
                             _StatusChip(status: loan.status),
+                            // Created/edited offline and not yet pushed — let
+                            // the user know it's queued, not lost.
+                            if (loan.serverId == null) ...[
+                              const SizedBox(width: 4),
+                              const _SyncPendingIcon(),
+                            ],
                           ],
                         ),
                         if (loan.description.isNotEmpty)
@@ -376,6 +412,24 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
+// ── Sync-pending indicator ──────────────────────────────────────────────────────
+
+class _SyncPendingIcon extends StatelessWidget {
+  const _SyncPendingIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Waiting to sync',
+      child: Icon(
+        Icons.cloud_upload_outlined,
+        size: 13,
+        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
+      ),
+    );
+  }
+}
+
 // ── Contact avatar ─────────────────────────────────────────────────────────────
 
 class _ContactAvatar extends StatelessWidget {
@@ -431,44 +485,58 @@ class _ContactAvatar extends StatelessWidget {
 // ── Empty state ────────────────────────────────────────────────────────────────
 
 class _EmptyLoanState extends StatelessWidget {
-  const _EmptyLoanState({required this.type, required this.filter});
+  const _EmptyLoanState({required this.type, required this.filter}) : isError = false;
+  const _EmptyLoanState.error()
+      : type = null,
+        filter = null,
+        isError = true;
+
   final String? type;
   final String? filter;
+  final bool isError;
 
   @override
   Widget build(BuildContext context) {
     final isHistory = filter == 'settled';
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              isHistory ? Icons.history_rounded : Icons.handshake_outlined,
-              size: 64,
-              color: AppColors.primary.withOpacity(0.3),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              isHistory
-                  ? 'No settled loans yet'
-                  : type == 'given'
-                      ? 'No one owes you'
-                      : 'You don\'t owe anyone',
-              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              isHistory
-                  ? 'Settled and rejected loans appear here.'
-                  : 'Tap + to record a new loan entry.',
-              style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.55)),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
+    final IconData icon;
+    final String title;
+    final String subtitle;
+    if (isError) {
+      icon = Icons.cloud_off_rounded;
+      title = "Couldn't load your khata";
+      subtitle = 'Pull down to retry once you\'re back online.';
+    } else if (isHistory) {
+      icon = Icons.history_rounded;
+      title = 'No settled loans yet';
+      subtitle = 'Settled and rejected loans appear here.';
+    } else {
+      icon = Icons.handshake_outlined;
+      title = type == 'given' ? 'No one owes you' : 'You don\'t owe anyone';
+      subtitle = 'Tap + to record a new loan entry.';
+    }
+    return Padding(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 64,
+            color: (isError ? AppColors.danger : AppColors.primary).withOpacity(0.3),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            title,
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            subtitle,
+            style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.55)),
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }

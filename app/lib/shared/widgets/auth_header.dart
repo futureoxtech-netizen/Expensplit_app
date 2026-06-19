@@ -5,8 +5,8 @@ import 'brand_logo.dart';
 
 /// A compact, consistent header for secondary auth screens (forgot
 /// password, verify email, reset password, etc.). Renders a left-side
-/// back button and a right-side inline brand lockup so the screen has
-/// identity without a huge centered logo eating vertical space.
+/// back button followed by a left-aligned inline brand lockup so the
+/// screen has identity without a huge centered logo eating vertical space.
 ///
 /// For the *primary* auth screens (login, register) prefer a centered
 /// [BrandLogo] hero instead of this header.
@@ -46,16 +46,17 @@ class AuthHeader extends StatelessWidget {
             )
           else
             const SizedBox(width: 4),
-          const Spacer(),
+          const SizedBox(width: 10),
           if (showWordmark)
             const BrandLockup(
               logoSize: 28,
               wordmarkFontSize: 16,
               spacing: 6,
-              alignment: MainAxisAlignment.end,
+              alignment: MainAxisAlignment.start,
             )
           else
             const BrandLogo(size: 32),
+          const Spacer(),
         ],
       ),
     );
