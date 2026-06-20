@@ -251,9 +251,11 @@ export const groupService = {
   },
 
   async addMemberByEmail({ userId, groupId, email }) {
+    // Any member can invite others (Splitwise-style) — membership is enforced
+    // by findGroupForMember. Destructive actions (remove/delete/edit) stay
+    // admin-only. This also matches the invite-code path, which lets anyone
+    // with the code join regardless of who shared it.
     const group = await findGroupForMember(groupId, userId);
-    const role = group.roleOf(userId);
-    if (!['owner', 'admin'].includes(role)) throw Forbidden('Only admins can invite members');
     const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
       throw NotFound(
@@ -417,11 +419,9 @@ export const groupService = {
   // credential-less User (isPlaceholder) so the rest of the expense/balance
   // machinery can reference them by id exactly like any other member.
   async addPlaceholderMember({ userId, groupId, name }) {
+    // Any member can add a guest (consistent with addMemberByEmail). Membership
+    // is enforced by findGroupForMember.
     const group = await findGroupForMember(groupId, userId);
-    const role = group.roleOf(userId);
-    if (!['owner', 'admin'].includes(role)) {
-      throw Forbidden('Only admins can add members');
-    }
 
     const trimmed = String(name || '').trim();
     if (trimmed.length < 1 || trimmed.length > 80) {

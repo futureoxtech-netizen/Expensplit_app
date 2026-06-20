@@ -9,7 +9,6 @@ import '../../../core/errors/error_messages.dart';
 import '../../../core/pagination/paged_sliver_list.dart';
 import '../../../core/services/ad_service.dart';
 import '../../../core/utils/amount_input_formatter.dart';
-import '../../../core/utils/csv_export.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../shared/widgets/ad_banner_widget.dart';
 import '../../../shared/widgets/app_sheet.dart';
@@ -98,51 +97,6 @@ class _PersonalTrackerScreenState extends ConsumerState<PersonalTrackerScreen> {
   final _scrollCtrl = ScrollController();
   PaginatedScrollListener? _scrollListener;
   (DateTime, DateTime)? _lastRangeKey;
-  bool _exporting = false;
-
-  /// Export the current period's personal expenses as a CSV file and open the
-  /// share sheet so the user can save it / open it in a spreadsheet.
-  Future<void> _exportCsv() async {
-    setState(() => _exporting = true);
-    try {
-      final r = _range;
-      final repo = ref.read(personalExpenseRepositoryProvider);
-      final items = await repo.list(from: r.start, to: r.end);
-      items.sort((a, b) => b.date.compareTo(a.date));
-
-      String d2(int n) => n.toString().padLeft(2, '0');
-      String day(DateTime t) => '${t.year}-${d2(t.month)}-${d2(t.day)}';
-
-      final csv = CsvExport.build(
-        header: ['Date', 'Description', 'Category', 'Amount', 'Currency', 'Note'],
-        rows: [
-          for (final e in items)
-            [day(e.date), e.description, e.category, e.amount, e.currency, e.note],
-        ],
-      );
-      final fileName = 'personal_expenses_${day(r.start)}_to_${day(r.end)}.csv';
-
-      if (!mounted) return;
-      if (items.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No expenses in this period to export.')),
-        );
-        return;
-      }
-      final ok = await CsvExport.share(
-        csv: csv,
-        fileName: fileName,
-        subject: 'Personal expenses',
-      );
-      if (mounted && !ok) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Couldn't export CSV on this device.")),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _exporting = false);
-    }
-  }
 
   @override
   void dispose() {
@@ -291,13 +245,6 @@ class _PersonalTrackerScreenState extends ConsumerState<PersonalTrackerScreen> {
             pinned: true,
             title: const Text('Personal Tracker',
                 style: TextStyle(fontWeight: FontWeight.w800)),
-            actions: [
-              IconButton(
-                tooltip: 'Export CSV',
-                icon: const Icon(Icons.ios_share_rounded),
-                onPressed: _exporting ? null : _exportCsv,
-              ),
-            ],
           ),
 
           SliverToBoxAdapter(

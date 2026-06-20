@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/error_messages.dart';
+import '../../../core/utils/csv_export.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../shared/widgets/ad_banner_widget.dart';
 import '../../../shared/widgets/empty_state.dart';
@@ -35,7 +36,31 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       .subtract(const Duration(days: 30));
   DateTime _customTo =
       DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day, 23, 59, 59);
-  bool _exporting = false;
+  // Which export is currently running ('pdf' | 'csv'), or null when idle. Used
+  // to show a per-button spinner and disable both while one is in flight.
+  String? _exportBusy;
+
+  // Order the Source segments are laid out in — also the order a left/right
+  // swipe steps through. +1 last swipe moved forward, -1 backward; drives the
+  // content slide direction.
+  static const _sourceOrder = [
+    _ReportSource.groups,
+    _ReportSource.personal,
+    _ReportSource.combined,
+  ];
+  int _swipeDir = 1;
+
+  /// Step the selected Source by [delta] (clamped to the ends). Wired to a
+  /// horizontal swipe on the report body so it behaves like swipeable tabs.
+  void _changeSource(int delta) {
+    final i = _sourceOrder.indexOf(_source);
+    final next = (i + delta).clamp(0, _sourceOrder.length - 1);
+    if (next == i) return;
+    setState(() {
+      _swipeDir = delta;
+      _source = _sourceOrder[next];
+    });
+  }
 
   // Cached so the Riverpod query key stays stable between rebuilds.
   late (DateTime, DateTime, String) _cachedRange = _computeRange();
@@ -113,40 +138,74 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         title: const Text('Reports'),
       ),
       body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: () async {
-            setState(() => _cachedRange = _computeRange());
-            ref.invalidate(reportProvider(ReportQuery(from: from, to: to)));
-            ref.invalidate(personalExpenseListProvider((from, to)));
+        child: GestureDetector(
+          // Swipe left/right anywhere on the report to step through the Source
+          // segments — the same gesture big apps use for swipeable tabs. The
+          // ListView only claims vertical drags, so this doesn't fight scroll.
+          onHorizontalDragEnd: (d) {
+            final v = d.primaryVelocity ?? 0;
+            if (v < -250) {
+              _changeSource(1);
+            } else if (v > 250) {
+              _changeSource(-1);
+            }
           },
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
-            children: [
-              _sourceChips(),
-              const SizedBox(height: 10),
-              _periodChips(),
-              const SizedBox(height: 12),
-              // ── Banner ad — sits between filters and report content ──────
-              const AdBannerWidget(),
-              const SizedBox(height: 12),
-              async.when(
-                loading: () => const Padding(
-                  padding: EdgeInsets.only(top: 12),
-                  child: ShimmerLoader(height: 120, count: 3),
-                ),
-                error: (e, _) => GlassCard(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.error_outline_rounded, color: AppColors.danger),
-                      const SizedBox(width: 10),
-                      Expanded(child: Text(friendlyError(e))),
-                    ],
+          child: RefreshIndicator(
+            onRefresh: () async {
+              setState(() => _cachedRange = _computeRange());
+              ref.invalidate(reportProvider(ReportQuery(from: from, to: to)));
+              ref.invalidate(personalExpenseListProvider((from, to)));
+            },
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
+              children: [
+                _sourceChips(),
+                const SizedBox(height: 10),
+                _periodChips(),
+                const SizedBox(height: 12),
+                // ── Banner ad — sits between filters and report content ──────
+                const AdBannerWidget(),
+                const SizedBox(height: 12),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 240),
+                  switchInCurve: Curves.easeOutCubic,
+                  transitionBuilder: (child, anim) {
+                    final slide = Tween<Offset>(
+                      begin: Offset(0.10 * _swipeDir, 0),
+                      end: Offset.zero,
+                    ).animate(anim);
+                    return ClipRect(
+                      child: FadeTransition(
+                        opacity: anim,
+                        child: SlideTransition(position: slide, child: child),
+                      ),
+                    );
+                  },
+                  // Re-key on the source so switching animates; the inner
+                  // loading/error/data state of one source updates in place.
+                  child: KeyedSubtree(
+                    key: ValueKey(_source),
+                    child: async.when(
+                      loading: () => const Padding(
+                        padding: EdgeInsets.only(top: 12),
+                        child: ShimmerLoader(height: 120, count: 3),
+                      ),
+                      error: (e, _) => GlassCard(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.error_outline_rounded, color: AppColors.danger),
+                            const SizedBox(width: 10),
+                            Expanded(child: Text(friendlyError(e))),
+                          ],
+                        ),
+                      ),
+                      data: (data) => _content(context, data, currency, label),
+                    ),
                   ),
                 ),
-                data: (data) => _content(context, data, currency, label),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -253,13 +312,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         _totalsCard(data, currency, label),
         const SizedBox(height: 14),
         _insightCallout(data, currency),
-        const SizedBox(height: 14),
-        _exportRow(data, currency, label),
         const SizedBox(height: 22),
         _sectionTitle('Spending by category'),
         const SizedBox(height: 10),
         _CategoryBreakdownCard(data: data, currency: currency),
-        const SizedBox(height: 16),
+        const SizedBox(height: 24),
+        _exportSection(data, currency, label),
       ],
     );
   }
@@ -309,63 +367,50 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         ],
       );
 
-  Widget _exportRow(ReportData data, String currency, String label) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: _exporting ? null : () => _exportPdf(data, currency, label),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFFFF6B6B), Color(0xFFFF9F43)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFFFF6B6B).withOpacity(0.30),
-                blurRadius: 18,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.picture_as_pdf_rounded, color: Colors.white),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Text(
-                  'Download PDF report',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                  ),
-                ),
-              ),
-              if (_exporting)
-                const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.4,
-                    valueColor: AlwaysStoppedAnimation(Colors.white),
-                  ),
-                )
-              else
-                const Icon(Icons.download_rounded, color: Colors.white),
-            ],
+  Widget _exportSection(ReportData data, String currency, String label) {
+    final busy = _exportBusy != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _sectionTitle('Export'),
+        const SizedBox(height: 4),
+        Text(
+          'Save this report to share or open in another app.',
+          style: TextStyle(
+            fontSize: 12,
+            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.55),
           ),
         ),
-      ),
+        const SizedBox(height: 12),
+        _ExportButton(
+          icon: Icons.picture_as_pdf_rounded,
+          label: 'Download PDF report',
+          gradient: const LinearGradient(
+            colors: [Color(0xFFFF6B6B), Color(0xFFFF9F43)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          shadowColor: const Color(0xFFFF6B6B),
+          busy: _exportBusy == 'pdf',
+          disabled: busy,
+          onTap: () => _exportPdf(data, currency, label),
+        ),
+        const SizedBox(height: 12),
+        _ExportButton(
+          icon: Icons.table_view_rounded,
+          label: 'Download CSV (spreadsheet)',
+          gradient: AppColors.brandGradient,
+          shadowColor: AppColors.primary,
+          busy: _exportBusy == 'csv',
+          disabled: busy,
+          onTap: () => _exportCsv(data, currency, label),
+        ),
+      ],
     );
   }
 
   Future<void> _exportPdf(ReportData data, String currency, String label) async {
-    setState(() => _exporting = true);
+    setState(() => _exportBusy = 'pdf');
     try {
       final userName = ref.read(authProvider).user?.name ?? 'You';
       final bytes = await ReportExporter.buildPdf(
@@ -381,7 +426,64 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         showErrorSnack(context, e, fallback: 'Export failed');
       }
     } finally {
-      if (mounted) setState(() => _exporting = false);
+      if (mounted) setState(() => _exportBusy = null);
+    }
+  }
+
+  Future<void> _exportCsv(ReportData data, String currency, String label) async {
+    // Guard: nothing to export. (The screen already hides this section when
+    // the period is empty, but stay defensive.)
+    if (data.items.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No expenses in this period to export.')),
+      );
+      return;
+    }
+    setState(() => _exportBusy = 'csv');
+    try {
+      String d2(int n) => n.toString().padLeft(2, '0');
+      String day(DateTime t) => '${t.year}-${d2(t.month)}-${d2(t.day)}';
+      final csv = CsvExport.build(
+        header: const [
+          'Date',
+          'Description',
+          'Group',
+          'Category',
+          'Paid by',
+          'Amount',
+          'Currency',
+        ],
+        rows: [
+          for (final e in data.items)
+            [
+              day(e.spentAt),
+              e.description,
+              e.groupName,
+              e.category,
+              e.paidBy,
+              e.amount,
+              e.currency,
+            ],
+        ],
+      );
+      final filename =
+          'expense-report-${DateFormat('yyyyMMdd').format(DateTime.now())}.csv';
+      final ok = await CsvExport.share(
+        csv: csv,
+        fileName: filename,
+        subject: 'Expense report · $label',
+      );
+      if (mounted && !ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Couldn't export CSV on this device.")),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        showErrorSnack(context, e, fallback: 'Export failed');
+      }
+    } finally {
+      if (mounted) setState(() => _exportBusy = null);
     }
   }
 
@@ -544,6 +646,84 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     );
   }
 
+}
+
+/// Full-width gradient action button used for the PDF / CSV exports. Shows a
+/// spinner in place of the trailing download icon while [busy], and dims +
+/// disables taps while another export is running ([disabled]).
+class _ExportButton extends StatelessWidget {
+  const _ExportButton({
+    required this.icon,
+    required this.label,
+    required this.gradient,
+    required this.shadowColor,
+    required this.busy,
+    required this.disabled,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final Gradient gradient;
+  final Color shadowColor;
+  final bool busy;
+  final bool disabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: disabled && !busy ? 0.5 : 1,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: disabled ? null : onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+            decoration: BoxDecoration(
+              gradient: gradient,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: shadowColor.withOpacity(0.30),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Icon(icon, color: Colors.white),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+                if (busy)
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.4,
+                      valueColor: AlwaysStoppedAnimation(Colors.white),
+                    ),
+                  )
+                else
+                  const Icon(Icons.download_rounded, color: Colors.white),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 const _categoryPalette = <Color>[

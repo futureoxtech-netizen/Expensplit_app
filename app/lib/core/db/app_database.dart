@@ -279,7 +279,17 @@ class SyncMeta extends Table {
   SyncMeta,
 ])
 class AppDatabase extends _$AppDatabase {
-  AppDatabase() : super(driftDatabase(name: 'expensplit_offline'));
+  AppDatabase()
+      : super(driftDatabase(
+          name: 'expensplit_offline',
+          // On web, Drift needs to be told where the sqlite3 WASM build and the
+          // drift worker live. Both ship from web/ (served at the app root), so
+          // they resolve to root-relative URLs. Native platforms ignore this.
+          web: DriftWebOptions(
+            sqlite3Wasm: Uri.parse('sqlite3.wasm'),
+            driftWorker: Uri.parse('drift_worker.js'),
+          ),
+        ),);
 
   /// Test/override constructor.
   AppDatabase.forExecutor(super.e);

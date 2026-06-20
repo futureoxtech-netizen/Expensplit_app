@@ -7,37 +7,64 @@ import '../../../shared/widgets/app_sheet.dart';
 import '../../../shared/widgets/avatar.dart';
 import '../../activity/providers/unread_provider.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../dashboard/presentation/dashboard_screen.dart';
+import '../../groups/presentation/friends_summary_screen.dart';
+import '../../groups/presentation/groups_screen.dart';
 import '../../groups/providers/group_providers.dart';
 import '../../loans/providers/loan_providers.dart';
+import '../../personal/presentation/personal_tracker_screen.dart';
 import '../../settings/settings_providers.dart';
 
 /// Five-tab bottom navigation with a "More" tab that opens a styled
 /// modal sheet for the secondary destinations. Keeping the bar to five
 /// items prevents the cramped seven-icon layout that felt cluttered
 /// and unprofessional.
-class HomeShell extends ConsumerWidget {
+class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key, required this.child});
   final Widget child;
 
-  // Routes that should show "More" as the selected tab.
-  static const _secondaryRoutes = <String>{
-    '/goals',
-    '/loans',
-    '/activity',
-    '/profile',
-    '/reports',
-  };
+  @override
+  ConsumerState<HomeShell> createState() => _HomeShellState();
+}
 
-  int _indexOfLocation(String loc, List<_NavItem> primaryTabs) {
-    for (var i = 0; i < primaryTabs.length; i++) {
-      if (loc.startsWith(primaryTabs[i].path)) return i;
+class _HomeShellState extends ConsumerState<HomeShell> {
+  // Drives the primary-tab pager. Created on demand (and recreated) so the
+  // pager always mounts on the tab matching the current route. Null while on a
+  // secondary route, where the routed `child` is shown instead.
+  PageController? _pageCtrl;
+
+  // The page the pager is currently on (its source of truth). Guards against
+  // feeding a route change back into the pager that put it there.
+  int _pageIndex = 0;
+
+  // True while a tab-tap animation is driving the pager, so onPageChanged
+  // doesn't fire a route change for each intermediate page it scrolls past.
+  bool _programmaticMove = false;
+
+  @override
+  void dispose() {
+    _pageCtrl?.dispose();
+    super.dispose();
+  }
+
+  /// The screen widget for a primary tab path. Built directly (not via the
+  /// router) so all tabs can live side-by-side in the [PageView] for a
+  /// finger-tracking swipe, the way WhatsApp's pager works.
+  Widget _screenForPath(String path) {
+    switch (path) {
+      case '/groups':
+        return const GroupsScreen();
+      case '/friends':
+        return const FriendsSummaryScreen();
+      case '/tracker':
+        return const PersonalTrackerScreen();
+      default:
+        return const DashboardScreen();
     }
-    if (_secondaryRoutes.any(loc.startsWith)) return primaryTabs.length;
-    return 0;
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final location = GoRouterState.of(context).matchedLocation;
     final modules = ref.watch(enabledModulesProvider);
     // Primary destinations — Home/Groups/Friends are always present; the
@@ -50,7 +77,37 @@ class HomeShell extends ConsumerWidget {
       if (modules.contains(AppModule.tracker))
         const _NavItem('/tracker', Icons.track_changes_rounded, 'Tracker'),
     ];
-    final index = _indexOfLocation(location, primaryTabs);
+    final primaryIndex = primaryTabs.indexWhere((t) => t.path == location);
+    final isPrimary = primaryIndex >= 0;
+    // Bottom-bar selection: a primary tab, or the "More" slot for secondaries.
+    final index = isPrimary ? primaryIndex : primaryTabs.length;
+
+    // Keep the pager in step with the route. Entering the pager (from a
+    // secondary route or a deep link) recreates the controller so it mounts on
+    // the right page; a tab tap while already in the pager animates to it.
+    if (isPrimary) {
+      if (_pageCtrl == null) {
+        _pageIndex = primaryIndex;
+        _pageCtrl = PageController(initialPage: primaryIndex);
+      } else if (primaryIndex != _pageIndex) {
+        _pageIndex = primaryIndex;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final c = _pageCtrl;
+          if (c != null && c.hasClients) {
+            c.animateToPage(primaryIndex,
+                duration: const Duration(milliseconds: 280),
+                curve: Curves.easeOutCubic);
+          }
+        });
+      }
+    } else if (_pageCtrl != null) {
+      // Leaving the pager — dispose after this frame (the PageView is no longer
+      // built, so its controller is safely detached by then).
+      final old = _pageCtrl;
+      _pageCtrl = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) => old?.dispose());
+    }
+
     final unread = ref.watch(unreadActivityProvider);
     // Pending group-invite count → badge on the Groups tab for discoverability.
     final inviteCount = ref.watch(myInvitesProvider).maybeWhen(
@@ -72,15 +129,45 @@ class HomeShell extends ConsumerWidget {
         context.go('/home');
       },
       child: Scaffold(
-        body: child,
+        // Primary tabs live in a finger-tracking PageView (swipe follows the
+        // drag, half-and-half, like WhatsApp). Secondary routes render the
+        // routed child as before. The bottom bar stays put either way.
+        body: isPrimary
+            ? PageView(
+                controller: _pageCtrl,
+                physics: const ClampingScrollPhysics(),
+                onPageChanged: (i) {
+                  if (_programmaticMove) return;
+                  if (i == _pageIndex || i >= primaryTabs.length) return;
+                  _pageIndex = i;
+                  context.go(primaryTabs[i].path);
+                },
+                children: [
+                  for (final t in primaryTabs) _screenForPath(t.path),
+                ],
+              )
+            : widget.child,
         bottomNavigationBar: NavigationBar(
           height: 70,
           selectedIndex: index,
           onDestinationSelected: (i) {
             if (i < primaryTabs.length) {
+              // Tapping a primary tab while in the pager animates to it;
+              // coming from a secondary route, navigate so the pager rebuilds
+              // on that tab.
+              _pageIndex = i;
               context.go(primaryTabs[i].path);
+              final c = _pageCtrl;
+              if (isPrimary && c != null && c.hasClients) {
+                _programmaticMove = true;
+                c
+                    .animateToPage(i,
+                        duration: const Duration(milliseconds: 280),
+                        curve: Curves.easeOutCubic)
+                    .whenComplete(() => _programmaticMove = false);
+              }
             } else {
-              _showMoreSheet(context, ref, location);
+              _showMoreSheet(context, location);
             }
           },
           destinations: [
@@ -115,8 +202,7 @@ class HomeShell extends ConsumerWidget {
     );
   }
 
-  Future<void> _showMoreSheet(
-      BuildContext context, WidgetRef ref, String currentLoc) async {
+  Future<void> _showMoreSheet(BuildContext context, String currentLoc) async {
     await showAppSheet<void>(
       context: context,
       builder: (_) => _MoreSheet(currentLoc: currentLoc),

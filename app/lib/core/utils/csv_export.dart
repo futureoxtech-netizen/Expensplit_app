@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:universal_html/html.dart' as html;
 
 /// Tiny CSV helper used by export features (e.g. the personal tracker). Builds
 /// an RFC-4180-ish CSV string and shares it as a downloadable file so the user
@@ -28,14 +29,25 @@ class CsvExport {
     return buffer.toString();
   }
 
-  /// Write [csv] to a temp file named [fileName] and open the share sheet.
-  /// Returns false if sharing isn't possible (e.g. unsupported platform).
+  /// Save/share [csv] as a file named [fileName]. On web this triggers a
+  /// browser download; on native it writes a temp file and opens the share
+  /// sheet. Returns false if it couldn't be delivered (e.g. unsupported
+  /// platform), so callers can surface a friendly message.
   static Future<bool> share({
     required String csv,
     required String fileName,
     String? subject,
   }) async {
     try {
+      if (kIsWeb) {
+        final blob = html.Blob([csv], 'text/csv');
+        final url = html.Url.createObjectUrlFromBlob(blob);
+        html.AnchorElement(href: url)
+          ..setAttribute('download', fileName)
+          ..click();
+        html.Url.revokeObjectUrl(url);
+        return true;
+      }
       final dir = await getTemporaryDirectory();
       final file = File('${dir.path}/$fileName');
       await file.writeAsString(csv);

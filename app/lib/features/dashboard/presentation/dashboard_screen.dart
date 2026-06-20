@@ -93,6 +93,8 @@ class DashboardScreen extends ConsumerWidget {
               currency: user?.currency ?? 'PKR',
               userId: user?.id ?? '',
               now: now,
+              reportsOn:
+                  ref.watch(enabledModulesProvider).contains(AppModule.reports),
             ),
           ),
           const SizedBox(height: 20),
@@ -246,12 +248,14 @@ class _SpendingCard extends StatelessWidget {
     required this.currency,
     required this.userId,
     required this.now,
+    required this.reportsOn,
   });
   final AsyncValue<ExpensePage> feedAsync;
   final AsyncValue<List<PersonalExpenseModel>> personalAsync;
   final String currency;
   final String userId;
   final DateTime now;
+  final bool reportsOn;
 
   @override
   Widget build(BuildContext context) {
@@ -277,7 +281,7 @@ class _SpendingCard extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () => GoRouter.of(context).push('/reports'),
+        onTap: reportsOn ? () => GoRouter.of(context).push('/reports') : null,
         borderRadius: BorderRadius.circular(24),
         child: Container(
           padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
@@ -317,25 +321,26 @@ class _SpendingCard extends StatelessWidget {
                     ],
                   ),
                   const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.18),
-                      borderRadius: BorderRadius.circular(20),
+                  if (reportsOn)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.18),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(Icons.bar_chart_rounded,
+                              color: Colors.white, size: 13),
+                          SizedBox(width: 4),
+                          Text('Reports',
+                              style: TextStyle(
+                                  color: Colors.white, fontSize: 11)),
+                        ],
+                      ),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Icon(Icons.bar_chart_rounded,
-                            color: Colors.white, size: 13),
-                        SizedBox(width: 4),
-                        Text('Reports',
-                            style: TextStyle(
-                                color: Colors.white, fontSize: 11)),
-                      ],
-                    ),
-                  ),
                 ],
               ),
               const SizedBox(height: 18),

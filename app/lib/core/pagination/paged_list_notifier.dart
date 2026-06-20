@@ -160,6 +160,18 @@ class PagedListNotifier<T> extends StateNotifier<PagedListState<T>> {
   /// the data updates in place instead of collapsing the whole list to a
   /// shimmer and resetting scroll position (which is what [refresh] does).
   Future<void> softRefresh() async {
+    // If the first page hasn't loaded yet, do a hard refresh instead of an
+    // in-place one. On a cold start the initial sync bumps the revision while
+    // the first paged read is still racing it; an in-place softRefresh here can
+    // grab the shared _inFlight lock and stall the first load, leaving the
+    // screen stuck on a shimmer (only a manual pull-to-refresh recovered it).
+    // refresh() force-resets _inFlight and reloads — the exact path that always
+    // worked via pull — so a sync tick reliably lands the first page. Once data
+    // is present, fall through to the cheap in-place refresh.
+    if (state.items == null) {
+      await refresh();
+      return;
+    }
     if (_inFlight) return;
     _inFlight = true;
     final epoch = _epoch;
