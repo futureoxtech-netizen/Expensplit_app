@@ -120,6 +120,27 @@ class _ActivityTile extends StatelessWidget {
     return m;
   }
 
+  /// Where tapping this activity should take the user. Group-less activities
+  /// (loans/khata, personal tracker) have no `groupId`, so they're routed by
+  /// type to their feature section — otherwise the row was dead (the bug where
+  /// tapping a khata activity did nothing). Returns null when there's nowhere
+  /// useful to go, so the row simply isn't tappable.
+  VoidCallback? _onTap(BuildContext context) {
+    final t = item.type;
+    // Pending invites: the user isn't a full member yet, so opening the group
+    // detail would 403. Send them to the Groups list (invite card lives there).
+    if (t.startsWith('group.invite')) return () => context.go('/groups');
+    // Khata/loan events → the loans list (deep-linking the exact loan from
+    // history would need the loan id persisted locally; the live push/banner
+    // already opens the specific loan via its route).
+    if (t.startsWith('loan.')) return () => context.push('/loans');
+    if (t.startsWith('personal.')) return () => context.push('/tracker');
+    if (item.groupId != null) {
+      return () => context.push('/groups/${item.groupId}');
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -127,22 +148,7 @@ class _ActivityTile extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
-        onTap: item.groupId == null
-            ? null
-            : () {
-                // For pending invites the user is not yet a full member, so
-                // navigating directly to the group detail would return 403.
-                // Send them to the Groups list instead, where the pending
-                // invitations banner lets them accept/decline.
-                // Any group.invite* type means the user is still pending —
-                // they can't open the group detail. Take them to the Groups
-                // screen where the invite card lets them accept/decline.
-                if (item.type.startsWith('group.invite')) {
-                  context.go('/groups');
-                } else {
-                  context.push('/groups/${item.groupId}');
-                }
-              },
+        onTap: _onTap(context),
         child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
@@ -227,6 +233,18 @@ class _ActivityTile extends StatelessWidget {
       case 'settlement.created':
         icon = Icons.handshake_rounded;
         color = Colors.blue;
+        break;
+      case 'personal.created':
+        icon = Icons.account_balance_wallet_rounded;
+        color = Colors.green;
+        break;
+      case 'personal.updated':
+        icon = Icons.edit_rounded;
+        color = Colors.orange;
+        break;
+      case 'personal.deleted':
+        icon = Icons.delete_rounded;
+        color = Colors.red;
         break;
       case 'reaction.added':
         icon = Icons.emoji_emotions_rounded;

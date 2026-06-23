@@ -334,13 +334,18 @@ export const loanService = {
 
   // ── Delete a loan (soft) ───────────────────────────────────────────────────
   async deleteLoan({ loanId, userId }) {
-    const loan = await Loan.findById(loanId);
+    // Populate so we can name the actor and notify the counterparty.
+    const loan = await Loan.findById(loanId).populate(POPULATE_USERS);
     if (!loan || loan.deletedAt) throw new NotFound('Loan not found');
     if (loan.createdBy.toString() !== userId.toString()) {
       throw new Forbidden('Only the creator can delete this loan');
     }
     loan.deletedAt = new Date();
     await loan.save();
+
+    const lenderId = loan.lender?._id?.toString() ?? loan.lender?.toString();
+    const borrowerId = loan.borrower?._id?.toString() ?? loan.borrower?.toString();
+
     // Tombstone so the OTHER party's device drops the loan too. Without this the
     // delta sync just stops returning the (now deletedAt) loan, so the
     // counterparty keeps a stale copy forever. Both parties are recipients; the
@@ -348,8 +353,35 @@ export const loanService = {
     recordTombstone({
       entityType: 'loan',
       entityId: loan._id,
-      users: [loan.lender, loan.borrower].filter(Boolean),
+      users: [lenderId, borrowerId].filter(Boolean),
     }).catch(() => {});
+
+    // Notify the counterparty (user-to-user loans only — a guest isn't an app
+    // user). The `notification:new` event also makes their client kick a sync,
+    // so the loan disappears in real time instead of lingering until the next
+    // periodic pull. Guest loans have a null counterparty → skipped.
+    const actorId = userId.toString();
+    const counterpartyId = actorId === lenderId ? borrowerId : lenderId;
+    const actor = actorId === lenderId ? loan.lender : loan.borrower;
+    if (counterpartyId && counterpartyId !== actorId) {
+      notifyUser(counterpartyId, {
+        title: 'Loan removed',
+        message: `${actor?.name ?? 'Someone'} deleted the loan of ${loan.currency} ${loan.amount}.`,
+        type: 'loan.deleted',
+        // The loan is gone, so deep-link to the khata list rather than a 404.
+        data: { loanId: loanId.toString(), route: '/loans' },
+      }).catch(() => {});
+    }
+
+    // History trace for both parties so the deletion shows in the activity feed.
+    logLoanActivity({
+      actor: userId,
+      recipients: [lenderId, borrowerId],
+      type: 'loan.deleted',
+      message: `${actor?.name ?? 'Someone'} deleted the loan of ${loan.currency} ${loan.amount}.`,
+      loanId,
+    });
+
     return { ok: true };
   },
 

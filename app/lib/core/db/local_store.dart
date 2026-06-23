@@ -355,6 +355,62 @@ class LocalStore {
     };
   }
 
+  /// Offline-first reaction toggle. Writes the caller's *desired* reaction into
+  /// the local DB immediately — so it shows instantly, works with no network,
+  /// and survives navigation — then queues a single coalesced sync op
+  /// (`reaction:set` / `reaction:clear`) for the sync engine to push when
+  /// online. [desiredEmoji] null/empty means "I have no reaction".
+  ///
+  /// Coalescing: any still-pending reaction op for the same target is dropped
+  /// before the new one is enqueued, so rapid emoji changes collapse to a
+  /// single push of the final state. The server endpoint is idempotent, so an
+  /// at-least-once retry of that push can never flip the reaction back off.
+  Future<void> setMyReactionAndQueue({
+    required String targetType,
+    required String localTargetId,
+    required String myId,
+    String? myName,
+    String? myAvatar,
+    required String? desiredEmoji,
+  }) async {
+    final hasEmoji = desiredEmoji != null && desiredEmoji.isNotEmpty;
+
+    // 1. Update just my row in the local reactions table (others untouched).
+    await (db.delete(db.reactions)
+          ..where((t) =>
+              t.targetType.equals(targetType) &
+              t.targetId.equals(localTargetId) &
+              t.userId.equals(myId)))
+        .go();
+    if (hasEmoji) {
+      await db.into(db.reactions).insertOnConflictUpdate(ReactionsCompanion.insert(
+            targetType: targetType,
+            targetId: localTargetId,
+            emoji: desiredEmoji,
+            userId: myId,
+            userName: Value(myName),
+            userAvatar: Value(myAvatar),
+          ));
+    }
+
+    // 2. Coalesce + enqueue the desired-state op keyed by the target.
+    final key = '$targetType:$localTargetId';
+    await (db.delete(db.syncQueue)
+          ..where((t) =>
+              t.entityType.equals('reaction') & t.entityLocalId.equals(key)))
+        .go();
+    await enqueue(
+      entityType: 'reaction',
+      opType: hasEmoji ? 'set' : 'clear',
+      entityLocalId: key,
+      payload: {
+        'targetType': targetType,
+        'targetId': localTargetId,
+        if (hasEmoji) 'emoji': desiredEmoji,
+      },
+    );
+  }
+
   /// Apply a realtime `reaction:changed` summary to the local DB (resolving the
   /// server target id to its local id). The expense/settlement streams update
   /// reactively from here.

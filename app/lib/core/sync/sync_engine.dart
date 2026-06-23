@@ -333,6 +333,42 @@ class SyncEngine {
         );
         return _PushOutcome.done;
 
+      case 'reaction:set':
+        {
+          final tType = payload['targetType']?.toString() ?? 'expense';
+          final localTargetId = payload['targetId']?.toString();
+          final emoji = payload['emoji']?.toString();
+          if (localTargetId == null || emoji == null) return _PushOutcome.done;
+          final entity = tType == 'settlement' ? 'settlement' : 'expense';
+          // Target was created and deleted offline before this could sync —
+          // there's nothing left to react to, so drop the op.
+          if (!await _store.entityRowExists(entity, localTargetId)) {
+            return _PushOutcome.done;
+          }
+          final sid = await _store.serverIdFor(entity, localTargetId);
+          // Target hasn't been pushed yet — wait for its create to sync first
+          // (the create op is ahead of us in FIFO order).
+          if (sid == null) return _PushOutcome.defer;
+          await _dio.post('/reactions/set',
+              body: {'targetType': tType, 'targetId': sid, 'emoji': emoji});
+          return _PushOutcome.done;
+        }
+
+      case 'reaction:clear':
+        {
+          final tType = payload['targetType']?.toString() ?? 'expense';
+          final localTargetId = payload['targetId']?.toString();
+          if (localTargetId == null) return _PushOutcome.done;
+          final entity = tType == 'settlement' ? 'settlement' : 'expense';
+          final sid = await _store.serverIdFor(entity, localTargetId);
+          // No server id → the target never synced → nothing on the server to
+          // clear. Otherwise clearing is idempotent (a no-op if already gone).
+          if (sid != null) {
+            await _dio.delete('/reactions/$tType/$sid');
+          }
+          return _PushOutcome.done;
+        }
+
       case 'loanPayment:delete':
         // Parent loan must be synced before its payment can be deleted server-side.
         final delLoanLocalId = payload['loanLocalId']?.toString();

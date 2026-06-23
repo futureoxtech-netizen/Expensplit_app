@@ -1,8 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/network/dio_client.dart';
+import '../../../core/db/local_store.dart';
+import '../../../core/sync/sync_engine.dart';
 import '../data/reaction_repository.dart';
 
 final reactionRepositoryProvider = Provider<ReactionRepository>(
-  (ref) => ReactionRepository(DioClient.instance),
+  (ref) => ReactionRepository(LocalStore.instance, SyncEngine.instance),
 );

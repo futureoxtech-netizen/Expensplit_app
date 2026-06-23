@@ -22,10 +22,11 @@ import 'reaction_picker.dart';
 ///     always-visible "add reaction" button, since there's no row to
 ///     long-press.
 ///
-/// Toggling is optimistic: the chips update instantly, the API call follows,
-/// and the realtime `reaction:changed` broadcast reconciles every client
-/// (including this one) by replacing [reactions] — which clears the local
-/// override. Failures revert and surface a snackbar.
+/// Toggling is optimistic AND offline-first: the chips update instantly, the
+/// reaction is written to the local DB and queued for sync (no network is
+/// awaited, so it works offline and survives navigation), and the realtime
+/// `reaction:changed` broadcast later reconciles every client (including this
+/// one) by replacing [reactions] — which clears the local override.
 class ReactionEditor extends ConsumerStatefulWidget {
   const ReactionEditor({
     super.key,
@@ -59,6 +60,14 @@ class _ReactionEditorState extends ConsumerState<ReactionEditor> {
   @override
   void didUpdateWidget(covariant ReactionEditor old) {
     super.didUpdateWidget(old);
+    // If this State object was recycled onto a *different* target (e.g. an
+    // unkeyed list row shuffling under us), the pending optimistic override
+    // belonged to the previous target — drop it so it can't bleed onto the
+    // new one. This is the safety net behind the stable row keys.
+    if (old.targetType != widget.targetType || old.targetId != widget.targetId) {
+      _override = null;
+      return;
+    }
     // Fresh data from the provider (a new list instance) supersedes any
     // optimistic guess we were showing.
     if (!identical(old.reactions, widget.reactions)) _override = null;
@@ -86,17 +95,36 @@ class _ReactionEditorState extends ConsumerState<ReactionEditor> {
     if (me == null) return;
     final optimistic = applyReactionToggle(_current, emoji, me);
     setState(() => _override = optimistic);
+
+    // Derive my desired reaction from the optimistic result: the emoji I now
+    // own, or null if this tap toggled my reaction off.
+    String? desired;
+    for (final r in optimistic) {
+      if (r.mineFor(me.id)) {
+        desired = r.emoji;
+        break;
+      }
+    }
+
     try {
-      await ref.read(reactionRepositoryProvider).toggle(
+      // Offline-first: this persists my reaction to the local DB and queues a
+      // sync op. It does NOT wait on the network, so a reaction succeeds with
+      // no connectivity and is pushed automatically once online. The local
+      // write + bumpRevision (or the later `reaction:changed` broadcast)
+      // delivers fresh data that clears the override.
+      await ref.read(reactionRepositoryProvider).setReaction(
             targetType: widget.targetType,
-            targetId: widget.targetId,
-            emoji: emoji,
+            localTargetId: widget.targetId,
+            desiredEmoji: desired,
+            myId: me.id,
+            myName: me.name,
+            myAvatar: me.avatarUrl,
           );
-      // Success: the realtime broadcast will deliver authoritative data and
-      // clear the override. Leave the optimistic state in place until then.
     } catch (e) {
+      // Only a genuine local failure (e.g. DB write) lands here — not a network
+      // error, since we no longer block on the server.
       if (!mounted) return;
-      setState(() => _override = null); // revert to server truth
+      setState(() => _override = null);
       showErrorSnack(context, e, fallback: 'Could not update reaction');
     }
   }

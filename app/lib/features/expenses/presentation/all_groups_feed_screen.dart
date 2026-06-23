@@ -145,6 +145,11 @@ class _AllGroupsFeedScreenState extends ConsumerState<AllGroupsFeedScreen> {
                   return const SizedBox.shrink();
                 }
                 return Padding(
+                  // Stable per-target key so each row's ReactionEditor State
+                  // (which holds optimistic reaction state) stays bound to its
+                  // expense across list reloads/reorders — otherwise an
+                  // optimistic reaction can land on a different row.
+                  key: ValueKey('feed-expense-${e.id}'),
                   padding: const EdgeInsets.only(bottom: 10),
                   child: _ExpenseTile(
                     expense: e,

@@ -8,6 +8,13 @@ export const reactionController = {
     res.json({ ok: true, data });
   }),
 
+  // Idempotently set the caller's reaction to a specific emoji (used by the
+  // offline sync queue, where retries must not flip a toggle back off).
+  set: asyncHandler(async (req, res) => {
+    const data = await reactionService.set({ userId: req.user.id, ...req.body });
+    res.json({ ok: true, data });
+  }),
+
   // Remove the caller's reaction on a target.
   clear: asyncHandler(async (req, res) => {
     const data = await reactionService.clear({

@@ -168,6 +168,79 @@ export const reactionService = {
   },
 
   /**
+   * Idempotently SET the caller's reaction on a target to exactly [emoji].
+   *
+   * Unlike [react] (a toggle whose outcome depends on hidden server state), this
+   * is deterministic: the caller already decided the desired emoji client-side,
+   * so re-sending the same emoji is a no-op. That makes it safe for the offline
+   * sync queue's at-least-once delivery — a retry after a lost response can't
+   * accidentally toggle the reaction back off. Pair with [clear] for removal.
+   */
+  async set({ userId, targetType, targetId, emoji }) {
+    if (!ALLOWED_REACTIONS.includes(emoji)) throw BadRequest('Unsupported reaction');
+    const { group, ownerId, label, route } = await resolveTarget(targetType, targetId);
+    await assertMember(group, userId);
+
+    const existing = await Reaction.findOne({ targetType, targetId, user: userId });
+    let action = 'unchanged';
+    if (!existing) {
+      try {
+        await Reaction.create({ group, targetType, targetId, user: userId, emoji });
+      } catch (err) {
+        // Lost a race against the caller's own concurrent set — the unique
+        // index rejected the duplicate. Fall back to an update so the latest
+        // emoji wins instead of 500-ing.
+        if (err?.code === 11000) {
+          await Reaction.updateOne({ targetType, targetId, user: userId }, { $set: { emoji } });
+        } else {
+          throw err;
+        }
+      }
+      action = 'added';
+    } else if (existing.emoji !== emoji) {
+      existing.emoji = emoji;
+      await existing.save();
+      action = 'switched';
+    }
+
+    const reactions = await this.summaryFor({ targetType, targetId });
+
+    // Only broadcast / log / notify when something actually changed — keeps an
+    // idempotent retry (same emoji re-sent after a dropped response) silent so
+    // it can't double-post activity entries or notifications.
+    if (action !== 'unchanged') {
+      emitToGroup(group, 'reaction:changed', {
+        groupId: group.toString(),
+        targetType,
+        targetId: targetId.toString(),
+        reactions,
+      });
+      if (action === 'added') {
+        activityService
+          .log({
+            groupId: group,
+            actor: userId,
+            type: 'reaction.added',
+            message: `reacted ${emoji} to ${label}`,
+            meta: { targetType, targetId: targetId.toString(), emoji, route },
+          })
+          .catch(() => {});
+      }
+      if (ownerId && ownerId.toString() !== userId.toString()) {
+        const actor = await actorName(userId);
+        notifyUser(ownerId, {
+          title: 'New reaction',
+          message: `${actor} reacted ${emoji} to ${label}`,
+          type: 'reaction.added',
+          data: { groupId: group.toString(), targetType, targetId: targetId.toString(), route },
+        }).catch(() => {});
+      }
+    }
+
+    return { action, reactions };
+  },
+
+  /**
    * Explicitly clear the caller's reaction on a target (idempotent — clearing
    * a target you never reacted to is a no-op that still returns the summary).
    */

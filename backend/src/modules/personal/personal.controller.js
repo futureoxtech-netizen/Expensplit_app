@@ -3,6 +3,24 @@ import { AppError } from '../../utils/errors.js';
 import { deleteFromS3 } from '../../middleware/upload.js';
 import { PersonalExpense } from './personal.model.js';
 import { recordTombstone } from '../sync/tombstone.model.js';
+import { activityService } from '../activity/activity.service.js';
+
+// Personal expenses have no group, so their activity is addressed to the owner
+// alone via `recipients`. The actor is also the owner, so the client's unread
+// badge skips it (own actions never notify) — it only ever shows in history.
+function logPersonalActivity(userId, type, message, personalId) {
+  activityService
+    .log({
+      actor: userId,
+      recipients: [userId],
+      type,
+      message,
+      meta: { personalId: personalId?.toString(), route: '/personal' },
+    })
+    .catch(() => {});
+}
+
+const money = (e) => `${e.currency} ${Number(e.amount).toFixed(2)}`;
 
 // POST /personal-expenses
 export const create = asyncHandler(async (req, res) => {
@@ -23,6 +41,14 @@ export const create = asyncHandler(async (req, res) => {
     receiptUrl: receiptUrl || '',
     clientOpId: clientOpId || null,
   });
+  // Logged only on a real create (the clientOpId dup-replay above returns
+  // early), so a retried offline op never double-posts the activity.
+  logPersonalActivity(
+    req.user.id,
+    'personal.created',
+    `added a personal expense "${expense.description}" (${money(expense)})`,
+    expense._id,
+  );
   res.status(201).json({ ok: true, data: expense });
 });
 
@@ -104,6 +130,12 @@ export const update = asyncHandler(async (req, res) => {
   if (receiptUrl !== undefined && oldReceipt && oldReceipt !== existing.receiptUrl) {
     deleteFromS3(oldReceipt).catch(() => {});
   }
+  logPersonalActivity(
+    req.user.id,
+    'personal.updated',
+    `updated personal expense "${existing.description}"`,
+    existing._id,
+  );
   res.json({ ok: true, data: existing });
 });
 
@@ -121,5 +153,11 @@ export const remove = asyncHandler(async (req, res) => {
     entityId: expense._id,
     users: [req.user.id],
   }).catch(() => {});
+  logPersonalActivity(
+    req.user.id,
+    'personal.deleted',
+    `deleted personal expense "${expense.description}" (${money(expense)})`,
+    expense._id,
+  );
   res.json({ ok: true });
 });

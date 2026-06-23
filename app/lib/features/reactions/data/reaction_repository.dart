@@ -1,41 +1,40 @@
-import '../../../core/network/dio_client.dart';
+import '../../../core/db/local_store.dart';
 import '../../../core/sync/sync_engine.dart';
-import 'reaction_model.dart';
 
+/// Offline-first reaction writes. The caller (the UI) has already decided its
+/// *desired* reaction (an emoji, or none) using WhatsApp toggle semantics; this
+/// just makes it durable locally and lets the sync engine push it when online.
+///
+/// There is deliberately no network call here: writing to the local DB +
+/// enqueuing a coalesced sync op means a reaction works with no connectivity,
+/// shows instantly, survives navigation, and reconciles against the server's
+/// authoritative `reaction:changed` broadcast once the push lands.
 class ReactionRepository {
-  ReactionRepository(this._client);
-  final DioClient _client;
+  ReactionRepository(this._store, this._sync);
+  final LocalStore _store;
+  final SyncEngine _sync;
 
-  /// Add / switch / toggle-off the caller's reaction. The server applies
-  /// WhatsApp semantics from the single [emoji] and returns the fresh summary.
-  Future<List<ReactionSummary>> toggle({
+  /// Set the caller's reaction on [localTargetId] to [desiredEmoji] (null/empty
+  /// = remove it). Persists locally, queues the sync op, and refreshes the UI.
+  Future<void> setReaction({
     required String targetType,
-    required String targetId,
-    required String emoji,
+    required String localTargetId,
+    required String? desiredEmoji,
+    required String myId,
+    String? myName,
+    String? myAvatar,
   }) async {
-    // targetId is a local id; the server keys reactions by its own id.
-    final sid = await SyncEngine.instance.requireServerId(targetType, targetId);
-    final res = await _client.post('/reactions', body: {
-      'targetType': targetType,
-      'targetId': sid,
-      'emoji': emoji,
-    });
-    return _reactionsFrom(res);
-  }
-
-  /// Explicitly clear the caller's reaction on a target.
-  Future<List<ReactionSummary>> clear({
-    required String targetType,
-    required String targetId,
-  }) async {
-    final sid = await SyncEngine.instance.requireServerId(targetType, targetId);
-    final res = await _client.delete('/reactions/$targetType/$sid');
-    return _reactionsFrom(res);
-  }
-
-  List<ReactionSummary> _reactionsFrom(Map<String, dynamic> res) {
-    final data = res['data'];
-    if (data is Map<String, dynamic>) return parseReactions(data['reactions']);
-    return const [];
+    await _store.setMyReactionAndQueue(
+      targetType: targetType,
+      localTargetId: localTargetId,
+      myId: myId,
+      myName: myName,
+      myAvatar: myAvatar,
+      desiredEmoji: desiredEmoji,
+    );
+    // Refresh derived/paged lists from the local DB right away; the enqueue
+    // itself already trips the sync engine's queue watcher to push when online.
+    _sync.bumpRevision();
+    _sync.kick();
   }
 }

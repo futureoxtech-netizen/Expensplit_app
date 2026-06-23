@@ -202,6 +202,9 @@ class RealtimeBridge {
     } else if (type.startsWith('group.')) {
       icon = Icons.group_rounded;
       accent = const Color(0xFF0984E3);
+    } else if (type.startsWith('loan.')) {
+      icon = Icons.account_balance_wallet_rounded;
+      accent = const Color(0xFF00B894);
     } else {
       icon = Icons.notifications_active_rounded;
       accent = const Color(0xFF6C5CE7);

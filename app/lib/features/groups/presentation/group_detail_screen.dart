@@ -470,6 +470,10 @@ class _ExpensesTabState extends ConsumerState<_ExpensesTab> {
                       .fold<double>(0, (a, s) => a + s.amount);
                   final iPaid = me != null && expense.paidBy.id == me.id;
                   return _ExpenseRow(
+                    // Stable per-target key so the row's ReactionEditor State
+                    // (optimistic reaction state) stays bound to this expense
+                    // across list reloads/reorders.
+                    key: ValueKey('grp-expense-${expense.id}'),
                     expense: expense,
                     myShare: myShare,
                     iPaid: iPaid,
@@ -477,7 +481,11 @@ class _ExpensesTabState extends ConsumerState<_ExpensesTab> {
                         GoRouter.of(context).push('/expenses/${expense.id}'),
                   );
                 case SettlementTxn s:
-                  return _SettlementRow(txn: s, meId: me?.id);
+                  return _SettlementRow(
+                    key: ValueKey('grp-settlement-${s.id}'),
+                    txn: s,
+                    meId: me?.id,
+                  );
               }
             },
           ),
@@ -1663,7 +1671,7 @@ class _InviteByEmailSheetState extends State<_InviteByEmailSheet> {
 /// list. Visually distinct from expenses — a payment, not a charge — so the
 /// list reads like Splitwise where settling up leaves a trace.
 class _SettlementRow extends StatelessWidget {
-  const _SettlementRow({required this.txn, required this.meId});
+  const _SettlementRow({super.key, required this.txn, required this.meId});
   final SettlementTxn txn;
   final String? meId;
 
@@ -1776,6 +1784,7 @@ class _SettlementRow extends StatelessWidget {
 
 class _ExpenseRow extends StatelessWidget {
   const _ExpenseRow({
+    super.key,
     required this.expense,
     required this.myShare,
     required this.iPaid,
