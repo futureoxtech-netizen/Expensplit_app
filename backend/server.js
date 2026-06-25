@@ -19,7 +19,7 @@ async function bootstrap() {
 }
 
 bootstrap().catch((err) => {
-  logger.error({ err }, 'Failed to start server');
+  logger.error({ err }, 'failing to start server');
   process.exit(1);
 });
 
