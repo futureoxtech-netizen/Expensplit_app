@@ -26,15 +26,31 @@ class AdService {
   static bool get adsSupported => _adsSupported;
 
   // ── Ad Unit IDs ────────────────────────────────────────────────────────────
-  static const String _appId        = 'ca-app-pub-1104992431983026~2525746081';
-  static const String _bannerId      = 'ca-app-pub-1104992431983026/9538783558';
-  static const String _interstitialId = 'ca-app-pub-1104992431983026/9893017095';
-  static const String _appOpenId     = 'ca-app-pub-1104992431983026/6709136316';
+  // AdMob ad units are PLATFORM-SPECIFIC: an Android unit will not serve on iOS
+  // and vice-versa. Android and iOS are registered as separate apps in AdMob,
+  // each with its own app ID + ad unit IDs, so every ID below is chosen per
+  // platform. (Using Android IDs on iOS was why iOS ads never showed.)
+  static bool get _isIOS => defaultTargetPlatform == TargetPlatform.iOS;
 
-  // Suppress unused warning — the app ID is used in AndroidManifest.xml
-  // but we keep it here as the single source of truth.
-  // ignore: unused_field
-  static const String appId = _appId;
+  // Android app — ca-app-pub-1104992431983026~2525746081
+  static const String _androidAppId         = 'ca-app-pub-1104992431983026~2525746081';
+  static const String _androidBannerId       = 'ca-app-pub-1104992431983026/9538783558';
+  static const String _androidInterstitialId = 'ca-app-pub-1104992431983026/9893017095';
+  static const String _androidAppOpenId      = 'ca-app-pub-1104992431983026/6709136316';
+
+  // iOS app — ca-app-pub-1104992431983026~6693731970
+  static const String _iosAppId         = 'ca-app-pub-1104992431983026~6693731970';
+  static const String _iosBannerId       = 'ca-app-pub-1104992431983026/8070392828';
+  static const String _iosInterstitialId = 'ca-app-pub-1104992431983026/2794015415';
+  static const String _iosAppOpenId      = 'ca-app-pub-1104992431983026/1480933742';
+
+  static String get _bannerId       => _isIOS ? _iosBannerId : _androidBannerId;
+  static String get _interstitialId => _isIOS ? _iosInterstitialId : _androidInterstitialId;
+  static String get _appOpenId      => _isIOS ? _iosAppOpenId : _androidAppOpenId;
+
+  // The app ID is declared natively (AndroidManifest.xml / iOS Info.plist), but
+  // we keep both here as the single source of truth for reference.
+  static String get appId => _isIOS ? _iosAppId : _androidAppId;
 
   // ── State ──────────────────────────────────────────────────────────────────
   InterstitialAd? _interstitial;

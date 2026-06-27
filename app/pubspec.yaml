@@ -117,15 +117,22 @@ flutter_launcher_icons:
     icon_size: 48
 
 flutter_native_splash:
-  # Matches AppColors.darkBg + the Dart SplashScreen background so the
-  # native → Flutter handoff is invisible. Run
-  #   `dart run flutter_native_splash:create`
-  # after changing these values.
+  # Always the dark brand background (#0B0B12) in BOTH light and dark mode so
+  # it matches AppColors.darkBg + the Dart SplashScreen — the native → Flutter
+  # handoff must be invisible, and the Dart splash is unconditionally dark.
+  # Run `dart run flutter_native_splash:create` after changing these values.
   color: "#0B0B12"
   color_dark: "#0B0B12"
-  image: assets/images/logo.png
-  image_dark: assets/images/logo.png
+  # Dedicated, downscaled logo (480px). The plugin treats the source as the
+  # highest-density asset (@3x on iOS / xxxhdpi on Android), so a 1560px source
+  # rendered the glyph at ~520pt — wider than the screen. 480px lands the logo
+  # at ~160pt on iOS / ~120dp on Android: visible but not oversized.
+  image: assets/images/splash_logo.png
+  image_dark: assets/images/splash_logo.png
   android: true
-  ios: false
+  ios: true
   android_gravity: center
+  # center keeps the logo at its native asset size instead of scaling it to
+  # fill the screen (which is what made the icon look huge on iOS).
+  ios_content_mode: center
   fullscreen: false

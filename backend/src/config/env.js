@@ -30,6 +30,19 @@ export const env = {
   SMTP_FROM: process.env.SMTP_FROM ?? 'Expensplit <noreply@example.com>',
 
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID ?? '',
+  // All OAuth client IDs whose Google ID tokens we accept as valid audiences.
+  // Mobile platforms mint ID tokens with DIFFERENT audiences:
+  //   • Android → the web/server client id (because the app sets serverClientId)
+  //   • iOS     → the iOS client id (its own OAuth client)
+  //   • Web     → the web client id
+  // So `verifyIdToken` must be given the full set, otherwise a token that is
+  // perfectly valid for one platform is rejected as "invalid" on another.
+  // Configure via GOOGLE_CLIENT_IDS (comma-separated); falls back to the single
+  // GOOGLE_CLIENT_ID for backward compatibility.
+  GOOGLE_CLIENT_IDS: (process.env.GOOGLE_CLIENT_IDS ?? process.env.GOOGLE_CLIENT_ID ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
 
   // AWS S3 (leave blank to fall back to local disk storage)
   AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID ?? '',

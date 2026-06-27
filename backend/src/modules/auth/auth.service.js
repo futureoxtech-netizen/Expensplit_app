@@ -10,7 +10,7 @@ import { sendOtpEmail, sendPasswordResetEmail } from '../../utils/mailer.js';
 import { env } from '../../config/env.js';
 import { BadRequest, Conflict, Unauthorized } from '../../utils/errors.js';
 
-const googleClient = new OAuth2Client(env.GOOGLE_CLIENT_ID);
+const googleClient = new OAuth2Client();
 
 const OTP_TTL_MS = 10 * 60 * 1000;
 const MAX_OTP_ATTEMPTS = 5;
@@ -218,7 +218,7 @@ export const authService = {
 
 
   async googleAuth({ idToken, accessToken }) {
-    if (!env.GOOGLE_CLIENT_ID || env.GOOGLE_CLIENT_ID.includes('YOUR_GOOGLE')) {
+    if (!env.GOOGLE_CLIENT_IDS.length || env.GOOGLE_CLIENT_IDS.some((id) => id.includes('YOUR_GOOGLE'))) {
       throw BadRequest('Google Sign-In is not configured on this server', 'GOOGLE_NOT_CONFIGURED');
     }
 
@@ -228,7 +228,9 @@ export const authService = {
       // Mobile path: verify Google ID token (JWT) directly
       let ticket;
       try {
-        ticket = await googleClient.verifyIdToken({ idToken, audience: env.GOOGLE_CLIENT_ID });
+        // Accept tokens minted for any of our configured clients (web / Android
+        // / iOS) — each platform uses a different audience. See env.GOOGLE_CLIENT_IDS.
+        ticket = await googleClient.verifyIdToken({ idToken, audience: env.GOOGLE_CLIENT_IDS });
       } catch {
         throw Unauthorized('Invalid Google token', 'GOOGLE_TOKEN_INVALID');
       }
