@@ -24,8 +24,16 @@ class SplashScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Match the native splash, which flutter_native_splash renders white in
+    // light mode and #0B0B12 in dark mode based on the system brightness.
+    // Following the same brightness here keeps the native → Flutter handoff
+    // seamless instead of flashing dark over a white native splash.
+    final isDark = MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+    final bgColor = isDark ? AppColors.darkBg : AppColors.lightSurface;
+    final onBgColor = isDark ? Colors.white : AppColors.lightOnSurface;
+
     return Scaffold(
-      backgroundColor: AppColors.darkBg,
+      backgroundColor: bgColor,
       body: SafeArea(
         child: Stack(
           alignment: Alignment.center,
@@ -54,7 +62,7 @@ class SplashScreen extends StatelessWidget {
                           Text(
                             'Split bills. Stay friends.',
                             style: TextStyle(
-                              color: Colors.white.withOpacity(0.6),
+                              color: onBgColor.withOpacity(0.6),
                               fontSize: 13,
                               fontWeight: FontWeight.w500,
                               letterSpacing: 0.4,
@@ -75,7 +83,7 @@ class SplashScreen extends StatelessWidget {
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
                   valueColor: AlwaysStoppedAnimation<Color>(
-                    Colors.white.withOpacity(0.6),
+                    onBgColor.withOpacity(0.6),
                   ),
                 ),
               ),
