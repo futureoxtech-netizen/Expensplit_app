@@ -44,9 +44,26 @@ class AdService {
   static const String _iosInterstitialId = 'ca-app-pub-1104992431983026/2794015415';
   static const String _iosAppOpenId      = 'ca-app-pub-1104992431983026/1480933742';
 
-  static String get _bannerId       => _isIOS ? _iosBannerId : _androidBannerId;
-  static String get _interstitialId => _isIOS ? _iosInterstitialId : _androidInterstitialId;
-  static String get _appOpenId      => _isIOS ? _iosAppOpenId : _androidAppOpenId;
+  // Google's OFFICIAL test ad units. They always fill, so we use them in debug
+  // builds — real ad units return "No ad to show" (no-fill) on dev devices /
+  // brand-new units, and clicking your own LIVE ads is a policy violation that
+  // can get the AdMob account banned. Release builds always use the real IDs.
+  static const String _testBannerIdAndroid       = 'ca-app-pub-3940256099942544/6300978111';
+  static const String _testBannerIdIOS           = 'ca-app-pub-3940256099942544/2934735716';
+  static const String _testInterstitialIdAndroid = 'ca-app-pub-3940256099942544/1033173712';
+  static const String _testInterstitialIdIOS     = 'ca-app-pub-3940256099942544/4411468910';
+  static const String _testAppOpenIdAndroid      = 'ca-app-pub-3940256099942544/9257395921';
+  static const String _testAppOpenIdIOS          = 'ca-app-pub-3940256099942544/5575463023';
+
+  static String get _bannerId => kDebugMode
+      ? (_isIOS ? _testBannerIdIOS : _testBannerIdAndroid)
+      : (_isIOS ? _iosBannerId : _androidBannerId);
+  static String get _interstitialId => kDebugMode
+      ? (_isIOS ? _testInterstitialIdIOS : _testInterstitialIdAndroid)
+      : (_isIOS ? _iosInterstitialId : _androidInterstitialId);
+  static String get _appOpenId => kDebugMode
+      ? (_isIOS ? _testAppOpenIdIOS : _testAppOpenIdAndroid)
+      : (_isIOS ? _iosAppOpenId : _androidAppOpenId);
 
   // The app ID is declared natively (AndroidManifest.xml / iOS Info.plist), but
   // we keep both here as the single source of truth for reference.
