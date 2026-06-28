@@ -1,6 +1,6 @@
 {
-    "name": "Expense Divider",
-    "short_name": "Expense Divider",
+    "name": "Expensplit",
+    "short_name": "Expensplit",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#FFFFFF",
